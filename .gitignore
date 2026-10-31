@@ -1,0 +1,6 @@
+backups/
+*.dll
+*.pdb
+*.zip
+release/
+esp-src/
