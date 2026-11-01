@@ -8,7 +8,7 @@ and below, CharmedBaryon's CommonLibSSE-NG, MIT) stays under the MIT License. Th
 Complete source code (the "corresponding source" the GPL asks for) of the DLLs in this archive: https://github.com/CageTV/LoS2-Control
 
 Third-party components built into the DLL
-- CommonLibSSE-NG (alandtse fork), MIT license, and SKSE (Skyrim Script Extender), used as a plugin framework.
+- CommonLibSSE-NG by alandtse (GPL-3.0-or-later with a modding exception; in the "new" DLL) and by CharmedBaryon / Ryan-rsm-McKenzie (MIT; in the "older" DLL), and SKSE (Skyrim Script Extender), used as the plugin framework.
 - nlohmann/json, Copyright (c) 2013-2022 Niels Lohmann, MIT license.
 - SimpleIni, Copyright (c) Brodie Thiesfield, MIT license.
 - spdlog, Copyright (c) Gabi Melman, MIT license.
