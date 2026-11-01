@@ -36,6 +36,23 @@ namespace Editor
 			return a_s;
 		}
 
+		// the reference callbacks take a pointer in the SE/AE library and a reference in the VR one
+		RE::TESObjectREFR* Ptr(RE::TESObjectREFR* a_ref) { return a_ref; }
+		RE::TESObjectREFR* Ptr(RE::TESObjectREFR& a_ref) { return &a_ref; }
+
+		// the VR library has no NiPointLight::SetLightAttenuation: call the game function (a Skyrim SE id; VR resolves it through the VR address library)
+		template <class T>
+		void SetAttenuation(T* a_light, float a_radius)
+		{
+			if constexpr (requires { a_light->SetLightAttenuation(a_radius); }) {
+				a_light->SetLightAttenuation(a_radius);
+			} else {
+				using func_t = void(T*, float);
+				static REL::Relocation<func_t> func{ RELOCATION_ID(17224, 17626) };
+				func(a_light, a_radius);
+			}
+		}
+
 		void CollectLights(RE::NiAVObject* a_obj, std::vector<RE::NiPointLight*>& a_out, int a_depth = 0)
 		{
 			if (!a_obj || a_depth > 40) {
@@ -133,7 +150,7 @@ namespace Editor
 			d.radius.x = a_s.radius;
 			d.radius.y = a_s.radius;
 			d.radius.z = a_s.size;
-			a_light->SetLightAttenuation(a_s.radius);
+			SetAttenuation(a_light, a_s.radius);
 			d.fade = a_s.fade;
 			d.ambient.green = a_s.cutoff;
 			// the high byte is Light Placer's (condition, game and script culling): keep it exactly as it is
@@ -167,13 +184,14 @@ namespace Editor
 
 			RE::TESObjectREFR* best = nullptr;
 			float              bestScore = -1.0f;
-			RE::TES::GetSingleton()->ForEachReferenceInRange(player, kPickRange, [&](RE::TESObjectREFR* a_ref) {
+			RE::TES::GetSingleton()->ForEachReferenceInRange(player, kPickRange, [&](auto&& a_arg) {
+				RE::TESObjectREFR* a_ref = Ptr(a_arg);
 				if (!a_ref || a_ref->IsDisabled() || !a_ref->Get3D()) {
 					return RE::BSContainer::ForEachResult::kContinue;
 				}
 				std::vector<RE::NiAVObject*> points;  // what is aimed at: the lights, or with a_any the origin of the object itself
 				if (a_any) {
-					if (a_ref->IsActor() || a_ref == player) {
+					if (skyrim_cast<RE::Actor*>(a_ref) || a_ref == player) {
 						return RE::BSContainer::ForEachResult::kContinue;
 					}
 					points.push_back(a_ref->Get3D());
@@ -264,7 +282,8 @@ namespace Editor
 				return;
 			}
 			const auto baseId = base->GetFormID();
-			RE::TES::GetSingleton()->ForEachReferenceInRange(player, kApplyAllRange, [&](RE::TESObjectREFR* a_other) {
+			RE::TES::GetSingleton()->ForEachReferenceInRange(player, kApplyAllRange, [&](auto&& a_arg) {
+				RE::TESObjectREFR* a_other = Ptr(a_arg);
 				if (a_other && a_other != ref.get() && !a_other->IsDisabled() && a_other->GetBaseObject() && a_other->GetBaseObject()->GetFormID() == baseId) {
 					ApplyTo(a_other, a_s);
 				}

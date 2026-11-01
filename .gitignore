@@ -4,3 +4,6 @@ backups/
 *.zip
 release/
 esp-src/
+plugin/build/
+plugin/build-local/vcpkg_installed/
+plugin/*.log

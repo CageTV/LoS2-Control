@@ -1,10 +1,11 @@
 LoS2 Control
 Copyright (C) 2026 CageTV
 
-This program is free software: you can redistribute it and/or modify it under the terms of the GNU General Public License as published by the Free Software
-Foundation, version 3. It is distributed WITHOUT ANY WARRANTY. The full license is in LICENSE.
+The files written for this project are under the MIT License (see LICENSE). The "LoS2Control.dll" built with alandtse's CommonLibSSE-NG ("new", Skyrim
+1.6.1170 and newer) is a combined work under the GNU General Public License, version 3 or later, as that library requires; the "older" DLL (VR and 1.6.1130
+and below, CharmedBaryon's CommonLibSSE-NG, MIT) stays under the MIT License. The full texts are in LICENSE.
 
-Complete source code (the "corresponding source" the GPL asks for) of the DLL in this archive: https://github.com/CageTV/LoS2-Control
+Complete source code (the "corresponding source" the GPL asks for) of the DLLs in this archive: https://github.com/CageTV/LoS2-Control
 
 Third-party components built into the DLL
 - CommonLibSSE-NG (alandtse fork), MIT license, and SKSE (Skyrim Script Extender), used as a plugin framework.

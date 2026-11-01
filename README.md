@@ -3,7 +3,7 @@
 SKSE plugin for **Lanterns of Skyrim II + LoS II Dynamic Lantern Lighting**, the Inverse Square Lighting (Community Shaders) conversion that runs on Light Placer.
 It gives the lanterns one schedule that actually drives the Light Placer lights, and an in-game editor for Light Placer lights in general.
 
-SE and AE. (No VR build yet.)
+Skyrim SE, AE (1.5.97 to 1.7.x) and VR. The installer offers two DLLs: the current one for 1.6.1170 and newer, and the older one for VR and 1.6.1130 and below. The VR build compiles and exports the VR entry point but has not been tested in a headset.
 
 ## What it does
 
@@ -31,14 +31,14 @@ Light Placer reads its files once at game start: json written from the editor sh
 - Lanterns of Skyrim II and LoS II Dynamic Lantern Lighting (updated plugin, see below), ISL Helper SKSE, Base Object Swapper
 
 ## Install
-The release zip has two folders. Install both as mods:
-1. `LoS2 Control` - the DLL, weather list and logo.
-2. `LoS2-DLL update` - `LoS2-DLL.esp` with the `LoS2C_LightsOn` global and the two Light Placer json files whose conditions read it. Let it overwrite LoS II Dynamic Lantern Lighting (it replaces the 628 hard-coded weather and 19:00-07:00 conditions).
+The download is a FOMOD installer with two steps:
+1. Choose the DLL: current (SE/AE 1.6.1170 and newer) or older (VR, 1.6.1130 and below). It is pre-selected from your game version.
+2. `LoS2-DLL update` (keep it ticked for the lantern schedule): `LoS2-DLL.esp` with the `LoS2C_LightsOn` global and the two Light Placer json files whose conditions read it. Let it overwrite LoS II Dynamic Lantern Lighting (it replaces the 628 hard-coded weather and 19:00-07:00 conditions).
 
 Settings are in `Data/SKSE/Plugins/LoS2Control.ini`, created on first start.
 
 ## Building
-CommonLibSSE-NG (alandtse fork), CMake, MSVC. `ng.cmake` describes the plugin.
+SE/AE: alandtse's CommonLibSSE-NG, `ng.cmake` describes the plugin. VR and older: CharmedBaryon's CommonLibSSE-NG through vcpkg, `plugin/build.cmd`. Both build the same `src/`.
 
 ## License
-GPL-3.0, see `LICENSE` and `NOTICE`.
+MIT for the files written here; the DLL built with alandtse's CommonLibSSE-NG is a combined work under the GPL (the GPL text is in `LICENSE`). See `LICENSE` and `NOTICE`.

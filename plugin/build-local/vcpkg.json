@@ -1,0 +1,6 @@
+{
+  "name": "los2control-legacy",
+  "version-string": "0.1.0",
+  "dependencies": [ "spdlog", "commonlibsse-ng", "nlohmann-json", "simpleini" ],
+  "builtin-baseline": "e03dc9b29710050cd1018bc5674688108658d327"
+}
