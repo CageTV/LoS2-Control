@@ -16,6 +16,7 @@ struct Settings
 
 	bool  pinLoS2{ true };                 // keep Lanterns of Skyrim II's own MCM at "Always off" (the ISL bulbs do the lighting)
 	char  lightsGlobal[64]{ "LoS2C_LightsOn" };  // GlobalVariable in LoS2-DLL.esp that Light Placer conditions read
+	int   checkIntervalMs{ 500 };          // how often the schedule looks at the clock and the weather (100 - 5000)
 	bool  debugLog{ false };
 
 	static Settings& Get();

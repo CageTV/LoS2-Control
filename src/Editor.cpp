@@ -15,7 +15,6 @@ namespace Editor
 		RE::ObjectRefHandle                          targetHandle;
 		std::unordered_map<std::string, LightSnap>   originals;  // by node name, values read at pick time
 		std::atomic<bool>                            pickRequested{ false };
-		std::atomic<bool>                            pickAny{ false };
 		std::string                                  status = "Look at a lantern and press the button.";
 		std::uint32_t                                serial = 0;
 
@@ -307,18 +306,24 @@ namespace Editor
 		std::vector<IndexEntry> index;
 		int                     indexFiles{ 0 };
 		bool                    indexed{ false };
+		std::vector<std::string> hiddenFiles;  // Data/LightPlacer/**/*.json.hidden: files this plugin switched off
 
 		void BuildIndex()
 		{
 			namespace fs = std::filesystem;
 			std::vector<IndexEntry> list;
 			int                     files = 0;
+			std::vector<std::string> hidden;
 			std::error_code         ec;
 			const fs::path          root{ "Data/LightPlacer" };
 			if (fs::is_directory(root, ec)) {
 				for (auto it = fs::recursive_directory_iterator(root, ec); it != fs::recursive_directory_iterator(); it.increment(ec)) {
 					if (ec) {
 						break;
+					}
+					if (it->is_regular_file(ec) && it->path().extension() == ".hidden" && it->path().stem().extension() == ".json") {
+						hidden.push_back(it->path().generic_string());
+						continue;
 					}
 					if (!it->is_regular_file(ec) || it->path().extension() != ".json") {
 						continue;
@@ -387,6 +392,7 @@ namespace Editor
 			}
 			std::scoped_lock l(indexLock);
 			index = std::move(list);
+			hiddenFiles = std::move(hidden);
 			indexFiles = files;
 			indexed = true;
 			logger::info("Light Placer index: {} files, {} entries", files, index.size());
@@ -402,6 +408,10 @@ namespace Editor
 
 		constexpr auto kBackupDir = "Data/SKSE/Plugins/LoS2Control/backups";
 		constexpr auto kManifest = "Data/SKSE/Plugins/LoS2Control/overrides.json";
+		constexpr auto kDisabled = "Data/SKSE/Plugins/LoS2Control/disabled.json";  // memory of the files switched off: [ "Data/LightPlacer/.../x.json", ... ]
+
+		std::vector<std::string> LoadDisabled();
+		void                     SaveDisabled(const std::vector<std::string>& a_list);
 
 		std::mutex               patchLock;
 		std::string              patchText;
@@ -503,6 +513,31 @@ namespace Editor
 			return json::array();
 		}
 
+		std::vector<std::string> LoadDisabled()
+		{
+			std::vector<std::string> list;
+			json                     m;
+			std::string              err;
+			if (LoadArray(kDisabled, m, err)) {
+				for (const auto& e : m) {
+					if (e.is_string()) {
+						list.push_back(e.get<std::string>());
+					}
+				}
+			}
+			return list;
+		}
+
+		void SaveDisabled(const std::vector<std::string>& a_list)
+		{
+			json        m = json::array();
+			std::string err;
+			for (const auto& e : a_list) {
+				m.push_back(e);
+			}
+			SaveJson(kDisabled, m, err);
+		}
+
 		json LoadManifest()
 		{
 			json        m;
@@ -601,91 +636,6 @@ namespace Editor
 			replaced ? "Updated" : "Saved", lights.size(), model, kPatchFile, skipped ? std::format(" ({} skipped)", skipped) : std::string{}));
 	}
 
-	bool LightDefaults(const std::string& a_edid, NewLight& a_out)
-	{
-		const auto ligh = a_edid.empty() ? nullptr : RE::TESForm::LookupByEditorID<RE::TESObjectLIGH>(a_edid);
-		if (!ligh) {
-			return false;
-		}
-		a_out.radius = static_cast<float>(ligh->data.radius);
-		a_out.color[0] = ligh->data.color.red / 255.0f;
-		a_out.color[1] = ligh->data.color.green / 255.0f;
-		a_out.color[2] = ligh->data.color.blue / 255.0f;
-		a_out.fade = ligh->fade;
-		return true;
-	}
-
-	void SaveNewLights(const std::vector<NewLight>& a_lights, const SaveOptions& a_opt)
-	{
-		const auto t = GetTarget();
-		if (!t.valid || t.model.empty()) {
-			SetPatchStatus("Pick an object first.");
-			return;
-		}
-		json lights = json::array();
-		for (const auto& n : a_lights) {
-			if (!RE::TESForm::LookupByEditorID<RE::TESObjectLIGH>(n.ligh)) {
-				SetPatchStatus("There is no light record named '" + n.ligh + "' (it is the base of the light, e.g. LOS_Candle).");
-				return;
-			}
-			json data;
-			data["light"] = n.ligh;
-			data["color"] = json::array({ Round(n.color[0], 3), Round(n.color[1], 3), Round(n.color[2], 3) });
-			data["radius"] = Round(n.radius, 1);
-			data["size"] = Round(n.size, 3);
-			data["cutoff"] = Round(n.cutoff, 4);
-			data["fade"] = Round(n.fade, 3);
-			if (const auto flags = FlagNames(n.flags); !flags.empty()) {
-				data["flags"] = flags;
-			}
-			if (const auto cond = Conditions(a_opt); !cond.empty()) {
-				data["conditions"] = cond;
-			}
-			json entry;
-			if (n.attachKind == 1 && !n.node.empty()) {
-				entry["nodes"] = json::array({ n.node });
-			} else {
-				entry["points"] = json::array({ json::array({ Round(n.point[0], 2), Round(n.point[1], 2), Round(n.point[2], 2) }) });
-			}
-			entry["data"] = std::move(data);
-			lights.push_back(std::move(entry));
-		}
-		if (lights.empty()) {
-			SetPatchStatus("Add a light first.");
-			return;
-		}
-		const auto  model = ModelForJson(t.model);
-		const auto  modelKey = NormModel(t.model);
-		json        arr;
-		std::string err;
-		if (!LoadArray(kPatchFile, arr, err)) {
-			SetPatchStatus(err);
-			return;
-		}
-		// the new lights join the entry of this model if our file already has one
-		json* owner = nullptr;
-		for (auto& e : arr) {
-			if (e.is_object() && e.contains("models") && e["models"].is_array() && e["models"].size() == 1 && e["models"][0].is_string() &&
-				NormModel(e["models"][0].get<std::string>()) == modelKey && e.contains("lights") && e["lights"].is_array()) {
-				owner = &e;
-				break;
-			}
-		}
-		if (owner) {
-			for (auto& l : lights) {
-				(*owner)["lights"].push_back(l);
-			}
-		} else {
-			arr.push_back({ { "models", json::array({ model }) }, { "lights", lights } });
-		}
-		if (!SaveJson(kPatchFile, arr, err)) {
-			SetPatchStatus(err);
-			return;
-		}
-		RescanJson();
-		SetPatchStatus(std::format("Saved {} new light(s) for {} in {}. Restart the game to see them.", lights.size(), model, kPatchFile));
-	}
-
 	void RemovePatch()
 	{
 		const auto t = GetTarget();
@@ -720,90 +670,6 @@ namespace Editor
 		}
 		RescanJson();
 		SetPatchStatus(std::format("Removed {} entry from {}. Restart the game for it to take effect.", removed, kPatchFile));
-	}
-
-	void DisableMatch(const std::string& a_file, int a_entry, const std::string& a_by)
-	{
-		const auto t = GetTarget();
-		if (!t.valid) {
-			SetPatchStatus("Pick a light first.");
-			return;
-		}
-		if (a_file == kPatchFile) {
-			SetPatchStatus("That is our own file: use 'Remove my entry' instead.");
-			return;
-		}
-		const fs::path p{ a_file };
-		json           arr;
-		std::string    err;
-		if (!LoadArray(p, arr, err)) {
-			SetPatchStatus(err);
-			return;
-		}
-		if (a_entry < 0 || a_entry >= static_cast<int>(arr.size()) || !arr[a_entry].is_object()) {
-			SetPatchStatus("That entry is not there any more: scan the Light Placer files again.");
-			return;
-		}
-		auto&      e = arr[a_entry];
-		const auto model = NormModel(t.model);
-		const auto edid = Lower(t.baseEdid);
-		int        removed = 0;
-		const auto strip = [&](const char* a_key, const auto& a_match) {
-			if (e.contains(a_key) && e[a_key].is_array()) {
-				auto& list = e[a_key];
-				for (auto it = list.begin(); it != list.end();) {
-					if (it->is_string() && a_match(it->get<std::string>())) {
-						it = list.erase(it);
-						++removed;
-					} else {
-						++it;
-					}
-				}
-			}
-		};
-		if (a_by == "model") {
-			strip("models", [&](const std::string& a_s) { return NormModel(a_s) == model; });
-		} else {
-			strip("formIDs", [&](const std::string& a_s) { return Lower(a_s) == edid; });
-			strip("visualEffects", [&](const std::string& a_s) { return Lower(a_s) == edid; });
-		}
-		if (!removed) {
-			SetPatchStatus("This entry does not name the picked object any more: scan the Light Placer files again.");
-			return;
-		}
-		const auto isEmpty = [&](const char* a_key) { return !e.contains(a_key) || !e[a_key].is_array() || e[a_key].empty(); };
-		if (isEmpty("models") && isEmpty("formIDs") && isEmpty("visualEffects") && !e.contains("addonNodes")) {
-			arr.erase(arr.begin() + a_entry);
-		}
-
-		// keep the very first version of each file so that it can be put back
-		auto manifest = LoadManifest();
-		bool known = false;
-		for (const auto& m : manifest) {
-			known |= m.is_object() && m.value("file", "") == a_file;
-		}
-		if (!known) {
-			std::error_code ec;
-			fs::create_directories(kBackupDir, ec);
-			const auto backup = fs::path(kBackupDir) / FlatName(a_file);
-			fs::copy_file(p, backup, fs::copy_options::overwrite_existing, ec);
-			if (ec) {
-				SetPatchStatus("Could not back up " + a_file + " (" + ec.message() + "): nothing was changed.");
-				return;
-			}
-			manifest.push_back({ { "file", a_file }, { "backup", backup.generic_string() } });
-			if (!SaveJson(kManifest, manifest, err)) {
-				SetPatchStatus(err + ": nothing was changed.");
-				return;
-			}
-		}
-		if (!SaveJson(p, arr, err)) {
-			SetPatchStatus(err);
-			return;
-		}
-		RescanJson();
-		SetPatchStatus(std::format("Took {} out of {} (entry {}). The original is kept; 'Put back' restores it. Restart the game for it to take effect.", model.empty() ? edid : model,
-			a_file, a_entry));
 	}
 
 	std::vector<std::string> ChangedFiles()
@@ -846,6 +712,107 @@ namespace Editor
 		}
 	}
 
+	void DisableFile(const std::string& a_file)
+	{
+		namespace fs = std::filesystem;
+		if (a_file == kPatchFile || a_file.size() < 6 || a_file.substr(a_file.size() - 5) != ".json") {
+			SetPatchStatus("Only another mod's .json file under Data/LightPlacer can be disabled.");
+			return;
+		}
+		const fs::path  from{ a_file };
+		const fs::path  to{ a_file + ".hidden" };
+		std::error_code ec;
+		if (fs::exists(to, ec)) {
+			SetPatchStatus(to.generic_string() + " already exists: re-enable or delete it first.");
+			return;
+		}
+		fs::rename(from, to, ec);
+		if (ec) {
+			SetPatchStatus("Could not disable " + a_file + " (" + ec.message() + ").");
+			return;
+		}
+		// the mod manager's virtual file system decides where the rename lands: check that the original is really gone
+		if (fs::exists(from, ec) || !fs::exists(to, ec)) {
+			fs::rename(to, from, ec);
+			SetPatchStatus("The mod manager did not let " + a_file + " be renamed, nothing was changed. Disable that file in your mod manager instead.");
+			return;
+		}
+		{
+			auto list = LoadDisabled();
+			if (std::ranges::find(list, a_file) == list.end()) {
+				list.push_back(a_file);
+				SaveDisabled(list);
+			}
+		}
+		RescanJson();
+		SetPatchStatus("Disabled " + a_file + " by renaming it to " + a_file + ".hidden. This switches off EVERY light that file defines, not only the picked object. Takes effect at the next game load; use 'Re-enable' to undo.");
+	}
+
+	void EnableFile(const std::string& a_hidden)
+	{
+		namespace fs = std::filesystem;
+		const std::string suffix = ".hidden";
+		if (a_hidden.size() <= suffix.size() || a_hidden.substr(a_hidden.size() - suffix.size()) != suffix) {
+			return;
+		}
+		const std::string orig = a_hidden.substr(0, a_hidden.size() - suffix.size());
+		const fs::path    to{ orig };
+		std::error_code   ec;
+		const auto        forget = [&]() {
+            auto list = LoadDisabled();
+            std::erase(list, orig);
+            SaveDisabled(list);
+		};
+		if (fs::exists(to, ec)) {
+			if (!fs::exists(fs::path(a_hidden), ec)) {
+				forget();  // it is back already (put back by hand or by the mod manager)
+				SetPatchStatus(orig + " is already in place. Removed it from the list.");
+			} else {
+				SetPatchStatus(orig + " already exists, so " + a_hidden + " cannot be switched back on.");
+			}
+			return;
+		}
+		if (!fs::exists(fs::path(a_hidden), ec)) {
+			forget();
+			SetPatchStatus(a_hidden + " no longer exists. Removed it from the list.");
+			return;
+		}
+		fs::rename(fs::path(a_hidden), to, ec);
+		if (ec) {
+			SetPatchStatus("Could not re-enable " + a_hidden + " (" + ec.message() + ").");
+			return;
+		}
+		forget();
+		RescanJson();
+		SetPatchStatus("Re-enabled " + to.generic_string() + ". Takes effect at the next game load.");
+	}
+
+	std::vector<std::string> HiddenFiles()
+	{
+		// drawn every frame: read the memory file at most once a second
+		static std::chrono::steady_clock::time_point lastRead{};
+		static std::vector<std::string>              cache;
+		const auto now = std::chrono::steady_clock::now();
+		if (now - lastRead < std::chrono::seconds(1)) {
+			return cache;
+		}
+		lastRead = now;
+
+		// the remembered list first (the scan can miss a file the mod manager put in another folder), then anything the scan found
+		std::vector<std::string> out;
+		for (const auto& f : LoadDisabled()) {
+			out.push_back(f + ".hidden");
+		}
+		std::scoped_lock l(indexLock);
+		for (const auto& f : hiddenFiles) {
+			if (std::ranges::find(out, f) == out.end()) {
+				out.push_back(f);
+			}
+		}
+		cache = out;
+		return out;
+	}
+
 	std::string PatchStatus()
 	{
 		std::scoped_lock l(patchLock);
@@ -869,7 +836,7 @@ namespace Editor
 			return;
 		}
 		float      dist = 0.0f;
-		const auto ref = PickRef(dist, pickAny.exchange(false));
+		const auto ref = PickRef(dist, false);
 		std::scoped_lock l(lock);
 		originals.clear();
 		if (!ref) {
@@ -890,13 +857,6 @@ namespace Editor
 
 	void RequestPick()
 	{
-		pickAny = false;
-		pickRequested = true;
-	}
-
-	void RequestPickAny()
-	{
-		pickAny = true;
 		pickRequested = true;
 	}
 

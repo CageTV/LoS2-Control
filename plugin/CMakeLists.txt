@@ -1,7 +1,7 @@
 cmake_minimum_required(VERSION 3.21)
 
 # LoS2Control.dll for Skyrim VR and 1.6.1130 and older: CharmedBaryon's CommonLibSSE-NG through vcpkg, the same sources as the SE/AE build in ../ng.cmake.
-project(LoS2Control VERSION 0.2.0 LANGUAGES CXX)
+project(LoS2Control VERSION 0.2.1 LANGUAGES CXX)
 
 find_package(CommonLibSSE CONFIG REQUIRED)
 find_package(nlohmann_json CONFIG REQUIRED)

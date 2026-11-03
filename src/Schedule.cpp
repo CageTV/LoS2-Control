@@ -7,7 +7,7 @@ namespace Schedule
 {
 	namespace
 	{
-		constexpr auto kTick = 250ms;
+		constexpr auto kTick = 100ms;  // wakes the editor; the schedule itself runs every Settings::checkIntervalMs
 
 		std::mutex            weatherLock;
 		std::set<std::string> weathers;  // lower case EditorIDs
@@ -21,6 +21,7 @@ namespace Schedule
 		std::string         lastGlobalName;
 		bool                warnedGlobal{ false };
 		std::optional<bool> lastLit;
+		std::chrono::steady_clock::time_point lastUpdate{};
 
 		std::string Lower(std::string a_s)
 		{
@@ -186,6 +187,7 @@ namespace Schedule
 	void SettingsChanged()
 	{
 		lastLit.reset();
+		lastUpdate = {};
 	}
 
 	Status GetStatus()
@@ -209,6 +211,6 @@ namespace Schedule
 				}
 			}
 		}).detach();
-		logger::info("Schedule running every {} ms", kTick.count());
+		logger::info("Schedule running every {} ms", Settings::Get().checkIntervalMs);
 	}
 }

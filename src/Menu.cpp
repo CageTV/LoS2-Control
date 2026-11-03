@@ -47,13 +47,6 @@ namespace Menu
 		std::uint32_t                  pickedSerial = 0;
 		std::vector<Editor::LightSnap> edits;
 		bool                           applyAll = false;
-		std::uint32_t                  addedSerial = 0;
-
-		struct Pending
-		{
-			Editor::NewLight l;
-			char             buf[128]{};
-		};
 
 		bool FlagBox(const char* a_label, Editor::LightSnap& a_s, std::uint32_t a_bit, const char* a_tip)
 		{
@@ -74,11 +67,6 @@ namespace Menu
 			if (Button("Pick the light I am looking at")) {
 				Editor::RequestPick();
 			}
-			SameLine();
-			if (Button("Pick the object I am looking at (even without a light)")) {
-				Editor::RequestPickAny();
-			}
-			Tip("For adding a light to an object that has none. Picks the object whose origin is closest to where the camera points.");
 			Tip("Searches within 2500 units for the light closest to where the camera points. Works on any object whose model carries a light: Light Placer lights, ISL Helper converted lights and placed vanilla lights.");
 			SameLine();
 			if (Button("Scan Light Placer files")) {
@@ -151,7 +139,7 @@ namespace Menu
 			SeparatorText("Write it as Light Placer json");
 			static int schedule = 0;
 			Combo("When is it lit", &schedule, "Always on\0On the lantern schedule, outdoors only\0On the lantern schedule, indoors too\0");
-			Tip("Always on: no condition, a permanent light. The schedule options add the condition 'LoS2C_LightsOn = 1', so the settings on the first page (hours, sun, weather) drive the light. Outdoors only also adds 'not interior'. Applies to the Save buttons in this section and in 'Add a light'.");
+			Tip("Always on: no condition, a permanent light. The schedule options add the condition 'LoS2C_LightsOn = 1', so the settings on the first page (hours, sun, weather) drive the light. Outdoors only also adds 'not interior'.");
 			if (Button("Save to LoS2Control_Patches.json")) {
 				Editor::SaveOptions o;
 				o.schedule = schedule;
@@ -161,88 +149,6 @@ namespace Menu
 			SameLine();
 			if (Button("Remove my entry for this model")) {
 				Editor::RemovePatch();
-			}
-
-			SeparatorText("Add a light to this object");
-			static std::vector<Pending> added;
-			if (t.serial != addedSerial) {
-				addedSerial = t.serial;
-				added.clear();
-			}
-			if (Button("Add a light")) {
-				Pending p;
-				std::snprintf(p.buf, sizeof(p.buf), "%s", "LOS_Candle");
-				p.l.ligh = p.buf;
-				Editor::LightDefaults(p.l.ligh, p.l);
-				added.push_back(p);
-			}
-			Tip("A light that the object does not have yet. It is created by Light Placer at the next game start (no live preview).");
-			for (std::size_t i = 0; i < added.size(); ++i) {
-				auto& p = added[i];
-				PushID(static_cast<int>(1000 + i));
-				Separator();
-				if (InputText("Light record (EditorID)", p.buf, sizeof(p.buf))) {
-					p.l.ligh = p.buf;
-				}
-				Tip("The LIGH record the light is based on. It gives the default look; the values below replace it. Use one that exists in your load order, e.g. LOS_Candle.");
-				if (Button("Take radius, colour and fade from the record")) {
-					if (!Editor::LightDefaults(p.l.ligh, p.l)) {
-						p.l.ligh += "  (not found)";
-						std::snprintf(p.buf, sizeof(p.buf), "%s", p.l.ligh.c_str());
-					}
-				}
-				bool atNode = p.l.attachKind == 1;
-				if (Checkbox("Attach to a node of the model", &atNode)) {
-					p.l.attachKind = atNode ? 1 : 2;
-				}
-				if (atNode) {
-					if (BeginCombo("Node", p.l.node.empty() ? "(choose)" : p.l.node.c_str())) {
-						for (const auto& n : t.nodes) {
-							if (Selectable(n.c_str(), n == p.l.node)) {
-								p.l.node = n;
-							}
-						}
-						EndCombo();
-					}
-				} else {
-					DragFloat3("Position (x y z)", p.l.point, 0.5f, -1000.0f, 1000.0f, "%.1f");
-					Tip("Offset from the origin of the model, in game units: x right, y forward, z up.");
-				}
-				SliderFloat("Radius", &p.l.radius, 0.0f, 3000.0f, "%.0f");
-				SliderFloat("Size", &p.l.size, 0.01f, 50.0f, "%.2f", ImGuiSliderFlags_Logarithmic);
-				SliderFloat("Cutoff", &p.l.cutoff, 0.01f, 1.0f, "%.3f", ImGuiSliderFlags_Logarithmic);
-				SliderFloat("Fade (intensity)", &p.l.fade, 0.0f, 20.0f, "%.2f");
-				ColorEdit3("Colour", p.l.color);
-				const auto bit = [&](const char* a_label, std::uint32_t a_bit) {
-					bool v = (p.l.flags & a_bit) != 0;
-					if (Checkbox(a_label, &v)) {
-						p.l.flags = v ? (p.l.flags | a_bit) : (p.l.flags & ~a_bit);
-					}
-				};
-				bit("Inverse square", Editor::Flag::InverseSquare);
-				SameLine();
-				bit("Linear", Editor::Flag::Linear);
-				bit("Shadow", Editor::Flag::Shadow);
-				SameLine();
-				bit("Portal strict", Editor::Flag::PortalStrict);
-				bit("Ignore scale", Editor::Flag::IgnoreScale);
-				SameLine();
-				bit("No external emittance", Editor::Flag::NoExternalEmittance);
-				if (Button("Remove this light")) {
-					added.erase(added.begin() + static_cast<std::ptrdiff_t>(i));
-					PopID();
-					break;
-				}
-				PopID();
-			}
-			if (!added.empty() && Button("Save the new lights")) {
-				std::vector<Editor::NewLight> list;
-				for (const auto& p : added) {
-					list.push_back(p.l);
-				}
-				Editor::SaveOptions o;
-				o.schedule = schedule;
-				Editor::SaveNewLights(list, o);
 			}
 
 			if (const auto ps = Editor::PatchStatus(); !ps.empty()) {
@@ -271,10 +177,10 @@ namespace Menu
 					if (x.file != Editor::kPatchFile) {
 						PushID((x.file + "#" + std::to_string(x.entry)).c_str());
 						SameLine();
-						if (SmallButton("Turn off for this object")) {
-							Editor::DisableMatch(x.file, x.entry, x.by);
+						if (SmallButton("Disable this file")) {
+							Editor::DisableFile(x.file);
 						}
-						Tip("Takes this object out of that entry in a copy of the file (the original is kept and can be put back). Use it when a second file also lights the object.");
+						Tip("Renames the whole file to .json.hidden so Light Placer stops reading it (takes effect at the next game load). This switches off every light in that file, not only this object. Nothing else is touched; you can re-enable it below.");
 						PopID();
 					}
 					TextDisabled("    nodes: %s | lights: %s", nodes.empty() ? "-" : nodes.c_str(), lights.empty() ? "-" : lights.c_str());
@@ -283,10 +189,23 @@ namespace Menu
 					TextColored(ImVec4(1.0f, 0.6f, 0.2f, 1.0f), "%s", c.c_str());
 				}
 				if (!m.conflicts.empty()) {
-					TextDisabled("Each entry adds its own bulb: turn the others off for this object once ours is saved.");
+					TextDisabled("Each entry adds its own bulb. Disable the other file (button above) or remove our entry.");
 				}
 			}
 
+			const auto hidden = Editor::HiddenFiles();
+			if (!hidden.empty()) {
+				SeparatorText("Files I disabled");
+				for (const auto& f : hidden) {
+					PushID(f.c_str());
+					TextWrapped("%s", f.c_str());
+					SameLine();
+					if (SmallButton("Re-enable")) {
+						Editor::EnableFile(f);
+					}
+					PopID();
+				}
+			}
 			const auto changed = Editor::ChangedFiles();
 			if (!changed.empty()) {
 				SeparatorText("Files I changed");
@@ -323,6 +242,8 @@ namespace Menu
 			Tip("Fog, rain, storm, snow and ash, from the list in LoS2Control_Weathers.txt.");
 			c |= Checkbox("Always on", &s.alwaysOn);
 			c |= Checkbox("Always off", &s.alwaysOff);
+			c |= SliderInt("Check every", &s.checkIntervalMs, 100, 5000, "%d ms");
+			Tip("How often the clock and the weather are looked at. Lanterns only change at a transition, so a longer time is fine. Raise it if another weather mod needs the room.");
 
 			SeparatorText("Weather list");
 			if (Button("Add the current weather")) {

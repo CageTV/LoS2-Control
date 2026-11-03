@@ -9,6 +9,7 @@ Settings& Settings::Get()
 void Settings::Clamp()
 {
 	mode = std::clamp(mode, 0, 1);
+	checkIntervalMs = std::clamp(checkIntervalMs, 100, 5000);
 	onHour = std::clamp(onHour, 0.0f, 24.0f);
 	offHour = std::clamp(offHour, 0.0f, 24.0f);
 	sunsetOffsetMinutes = std::clamp(sunsetOffsetMinutes, -240.0f, 240.0f);
@@ -35,6 +36,7 @@ void Settings::Load()
 		getBool("Schedule", "bWeatherKeepsOn", weatherKeepsOn);
 		getBool("Schedule", "bAlwaysOn", alwaysOn);
 		getBool("Schedule", "bAlwaysOff", alwaysOff);
+		checkIntervalMs = static_cast<int>(ini.GetLongValue("Schedule", "iCheckIntervalMs", checkIntervalMs));
 
 		getBool("LoS2", "bPinLanternsOfSkyrimMCM", pinLoS2);
 		const char* g = ini.GetValue("LoS2", "sLightsGlobal", lightsGlobal);
@@ -60,6 +62,7 @@ void Settings::Save() const
 	ini.SetBoolValue("Schedule", "bWeatherKeepsOn", weatherKeepsOn, "; keep the lanterns lit by day during the weathers in LoS2Control_Weathers.txt");
 	ini.SetBoolValue("Schedule", "bAlwaysOn", alwaysOn);
 	ini.SetBoolValue("Schedule", "bAlwaysOff", alwaysOff);
+	ini.SetLongValue("Schedule", "iCheckIntervalMs", checkIntervalMs, "; how often (milliseconds, 100 - 5000) the clock and the weather are checked. Raise it if another weather mod needs the room; lights only change at a transition anyway");
 
 	ini.SetBoolValue("LoS2", "bPinLanternsOfSkyrimMCM", pinLoS2, "; keep Lanterns of Skyrim II at Always off so only the Light Placer bulbs light the lanterns");
 	ini.SetValue("LoS2", "sLightsGlobal", lightsGlobal, "; GlobalVariable (in LoS2-DLL.esp) that the Light Placer JSON reads: 1 = lit, 0 = off");

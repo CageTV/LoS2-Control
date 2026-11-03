@@ -91,31 +91,15 @@ namespace Editor
 	{
 		int schedule{ 0 };  // 0 always lit, 1 the LoS2 Control schedule outdoors only, 2 the schedule everywhere (LoS2C_LightsOn)
 	};
-	// A light that does not exist yet: described here, written as json, created by Light Placer at the next game start
-	struct NewLight
-	{
-		std::string   ligh;             // LIGH EditorID the light is based on
-		int           attachKind{ 2 };  // 1 node of the model (node), 2 point (point)
-		std::string   node;
-		float         point[3]{ 0.0f, 0.0f, 0.0f };
-		float         radius{ 256.0f };
-		float         size{ 2.0f };
-		float         cutoff{ 0.1f };
-		float         fade{ 1.0f };
-		float         color[3]{ 1.0f, 0.8f, 0.5f };
-		std::uint32_t flags{ (1u << 10) | (1u << 0) | (1u << 21) };  // inverse square, portal strict, ignore scale
-	};
-	// Fills radius, colour and fade from a LIGH record; false when there is no such record
-	bool LightDefaults(const std::string& a_edid, NewLight& a_out);
-	void SaveNewLights(const std::vector<NewLight>& a_lights, const SaveOptions& a_opt);
-	void RequestPickAny();
 	// Saves the lights of the picked object as one entry (keyed by its model) in LoS2Control_Patches.json: the only file this part creates or replaces
 	void SavePatch(const SaveOptions& a_opt);
 	// Removes our entry for the picked object's model
 	void RemovePatch();
-	// Conflict resolution: takes the picked object's model (or editor id) out of one entry of another json. The original file is saved first.
-	void DisableMatch(const std::string& a_file, int a_entry, const std::string& a_by);
-	// Files changed that way, so they can be put back
+	// Conflict resolution: switches a whole file off by renaming it to <file>.hidden (Light Placer only reads .json); EnableFile undoes it. Both take effect at the next game load.
+	void DisableFile(const std::string& a_file);
+	void EnableFile(const std::string& a_hidden);
+	std::vector<std::string> HiddenFiles();
+	// Files an earlier version of this plugin changed (other mods' json, copy kept), so they can be put back
 	std::vector<std::string> ChangedFiles();
 	void                     RestoreFile(const std::string& a_file);
 	std::string              PatchStatus();
