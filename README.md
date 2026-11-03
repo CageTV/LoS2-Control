@@ -11,7 +11,7 @@ Skyrim SE, AE (1.5.97 to 1.7.x) and VR. The installer offers two DLLs: the curre
 - Fixed hours, or follow the sun (sunset and sunrise of the current climate, with offsets).
 - "Check every": how often the clock and the weather are looked at (100 to 5000 ms, default 500).
 - Gloomy weather keeps the lanterns lit by day, from a text list (`LoS2Control_Weathers.txt`). "Add the current weather" adds modded weathers.
-- Always on / always off.
+- Lanterns mode: follow the schedule, always on or always off (the weather option only applies while following the schedule).
 - Keeps the Lanterns of Skyrim II MCM pinned at "Always off", because the ISL bulbs come from Light Placer.
 - The schedule is a global, `LoS2C_LightsOn`, that Light Placer conditions read. Anything can use it.
 

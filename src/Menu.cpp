@@ -47,6 +47,7 @@ namespace Menu
 		std::uint32_t                  pickedSerial = 0;
 		std::vector<Editor::LightSnap> edits;
 		bool                           applyAll = false;
+		bool                           advancedFlags = false;
 
 		bool FlagBox(const char* a_label, Editor::LightSnap& a_s, std::uint32_t a_bit, const char* a_tip)
 		{
@@ -73,7 +74,9 @@ namespace Menu
 				Editor::RescanJson();
 			}
 			Tip("Reads Data/LightPlacer/**/*.json so the list below can show which files define the picked object. Press it again after changing files.");
-			Checkbox("Edits also change all loaded copies of this object", &applyAll);
+			Checkbox("Show advanced flags", &advancedFlags);
+		Tip("Off hides Linear, Portal strict, Ignore scale and No external emittance. Flags already set on a light are kept and saved either way.");
+		Checkbox("Edits also change all loaded copies of this object", &applyAll);
 			Tip("Within 6000 units of you. Useful to see a change on every lantern of a street at once.");
 
 			const auto t = Editor::GetTarget();
@@ -113,14 +116,18 @@ namespace Menu
 					c |= SliderFloat("Fade (intensity)", &e.fade, 0.0f, 20.0f, "%.2f");
 					c |= ColorEdit3("Colour", e.color);
 					c |= FlagBox("Inverse square", e, Editor::Flag::InverseSquare, "Community Shaders inverse square falloff.");
-					SameLine();
-					c |= FlagBox("Linear", e, Editor::Flag::Linear, "Linear falloff (Light Limit Fix).");
+					if (advancedFlags) {
+						SameLine();
+						c |= FlagBox("Linear", e, Editor::Flag::Linear, "Linear falloff (Light Limit Fix).");
+					}
 					c |= FlagBox("Shadow", e, Editor::Flag::Shadow, "Casts shadows. Community Shaders limits these to 4 per cell.");
-					SameLine();
-					c |= FlagBox("Portal strict", e, Editor::Flag::PortalStrict, "Does not light through portals (interior rooms).");
-					c |= FlagBox("Ignore scale", e, Editor::Flag::IgnoreScale, "Ignores the object's scale.");
-					SameLine();
-					c |= FlagBox("No external emittance", e, Editor::Flag::NoExternalEmittance, "Does not follow the time of day colour.");
+					if (advancedFlags) {
+						SameLine();
+						c |= FlagBox("Portal strict", e, Editor::Flag::PortalStrict, "Does not light through portals (interior rooms).");
+						c |= FlagBox("Ignore scale", e, Editor::Flag::IgnoreScale, "Ignores the object's scale.");
+						SameLine();
+						c |= FlagBox("No external emittance", e, Editor::Flag::NoExternalEmittance, "Does not follow the time of day colour.");
+					}
 					if (e.cull != 0) {
 						TextDisabled("Hidden by Light Placer (cull bits 0x%02X): conditions, the game or a script. Edits are kept for when it shows again.", e.cull);
 					}
@@ -238,10 +245,17 @@ namespace Menu
 				c |= SliderFloat("After sunset begins", &s.sunsetOffsetMinutes, -180.0f, 180.0f, "%+.0f min");
 				c |= SliderFloat("After sunrise ends", &s.sunriseOffsetMinutes, -180.0f, 180.0f, "%+.0f min");
 			}
+			int lanternMode = s.alwaysOn ? 1 : (s.alwaysOff ? 2 : 0);
+			if (Combo("Lanterns", &lanternMode, "Follow the schedule\0Always on\0Always off\0")) {
+				s.alwaysOn = lanternMode == 1;
+				s.alwaysOff = lanternMode == 2;
+				c = true;
+			}
+			Tip("Follow the schedule: the hours or sun above, plus gloomy weather if ticked. Always on / Always off ignore the schedule and the weather.");
+			BeginDisabled(lanternMode != 0);
 			c |= Checkbox("Gloomy weather keeps them lit by day", &s.weatherKeepsOn);
-			Tip("Fog, rain, storm, snow and ash, from the list in LoS2Control_Weathers.txt.");
-			c |= Checkbox("Always on", &s.alwaysOn);
-			c |= Checkbox("Always off", &s.alwaysOff);
+			EndDisabled();
+			Tip("Fog, rain, storm, snow and ash, from the list in LoS2Control_Weathers.txt. Only used while the lanterns follow the schedule.");
 			c |= SliderInt("Check every", &s.checkIntervalMs, 100, 5000, "%d ms");
 			Tip("How often the clock and the weather are looked at. Lanterns only change at a transition, so a longer time is fine. Raise it if another weather mod needs the room.");
 
