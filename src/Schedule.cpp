@@ -1,5 +1,6 @@
 #include "Schedule.h"
 
+#include "DefaultWeathers.h"
 #include "Editor.h"
 #include "Settings.h"
 
@@ -141,7 +142,9 @@ namespace Schedule
 		{
 			if (running.load()) {
 				Update();
+				Settings::SaveIfDue();
 				Editor::Tick();
+				Editor::ScaleTick();
 			}
 		}
 	}
@@ -162,7 +165,7 @@ namespace Schedule
 		logger::info("{} weathers keep the lanterns on by day ({})", weathers.size(), Settings::kWeatherPath);
 	}
 
-	bool AddCurrentWeather()
+	AddResult AddCurrentWeather()
 	{
 		std::string name;
 		{
@@ -170,22 +173,110 @@ namespace Schedule
 			name = status.weather;
 		}
 		if (name.empty()) {
-			return false;
+			return AddResult::NoWeather;
 		}
 		{
 			std::scoped_lock l(weatherLock);
-			if (!weathers.insert(Lower(name)).second) {
+			if (weathers.contains(Lower(name))) {
+				return AddResult::AlreadyListed;
+			}
+		}
+		// Write the whole file, so that a failed write is noticed and reported
+		std::string text;
+		{
+			std::ifstream in(Settings::kWeatherPath, std::ios::binary);
+			text.assign(std::istreambuf_iterator<char>(in), std::istreambuf_iterator<char>());
+		}
+		if (!text.empty() && text.back() != '\n') {
+			text += '\n';
+		}
+		text += name + '\n';
+		{
+			std::ofstream out(Settings::kWeatherPath, std::ios::binary | std::ios::trunc);
+			out << text;
+			out.flush();
+			if (!out.good()) {
+				logger::error("Could not write {}: {} was not added", Settings::kWeatherPath, name);
+				return AddResult::NotSaved;
+			}
+		}
+		{
+			std::scoped_lock l(weatherLock);
+			weathers.insert(Lower(name));
+		}
+		logger::info("Added weather {} to the list", name);
+		return AddResult::Added;
+	}
+
+	RemoveResult RemoveCurrentWeather()
+	{
+		std::string name;
+		{
+			std::scoped_lock l(statusLock);
+			name = status.weather;
+		}
+		if (name.empty()) {
+			return RemoveResult::NoWeather;
+		}
+		const auto key = Lower(name);
+		{
+			std::scoped_lock l(weatherLock);
+			if (!weathers.contains(key)) {
+				return RemoveResult::NotListed;
+			}
+		}
+		std::string text;
+		{
+			std::ifstream in(Settings::kWeatherPath, std::ios::binary);
+			text.assign(std::istreambuf_iterator<char>(in), std::istreambuf_iterator<char>());
+		}
+		// every line that names this weather goes, the rest (comments, line endings) stays as it is
+		std::string kept;
+		std::size_t pos = 0;
+		while (pos < text.size()) {
+			const auto nl = text.find('\n', pos);
+			const auto end = nl == std::string::npos ? text.size() : nl + 1;
+			const auto raw = text.substr(pos, end - pos);
+			if (Lower(Trim(raw)) != key) {
+				kept += raw;
+			}
+			pos = end;
+		}
+		{
+			std::ofstream out(Settings::kWeatherPath, std::ios::binary | std::ios::trunc);
+			out << kept;
+			out.flush();
+			if (!out.good()) {
+				logger::error("Could not write {}: {} was not removed", Settings::kWeatherPath, name);
+				return RemoveResult::NotSaved;
+			}
+		}
+		{
+			std::scoped_lock l(weatherLock);
+			weathers.erase(key);
+		}
+		logger::info("Removed weather {} from the list", name);
+		return RemoveResult::Removed;
+	}
+
+	bool ResetWeathers()
+	{
+		{
+			std::ofstream out(Settings::kWeatherPath, std::ios::binary | std::ios::trunc);
+			out << kDefaultWeathers;
+			out.flush();
+			if (!out.good()) {
+				logger::error("Could not write {}: the weather list was not reset", Settings::kWeatherPath);
 				return false;
 			}
 		}
-		std::ofstream out(Settings::kWeatherPath, std::ios::app);
-		out << '\n' << name;
-		logger::info("Added weather {} to the list", name);
+		ReloadWeathers();
 		return true;
 	}
 
 	void SettingsChanged()
 	{
+		Editor::ScaleChanged();
 		lastLit.reset();
 		lastUpdate = {};
 	}
@@ -199,6 +290,8 @@ namespace Schedule
 	void Init()
 	{
 		ReloadWeathers();
+		Editor::RescanJson();  // the light files tell which lanterns the global brightness / distance applies to
+		Editor::InstallFrameHook();
 		if (running.exchange(true)) {
 			return;
 		}

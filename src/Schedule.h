@@ -19,8 +19,14 @@ namespace Schedule
 	void Init();
 	// Re-reads LoS2Control_Weathers.txt
 	void ReloadWeathers();
-	// Appends the current weather to the list and the file; returns false when there is none or it is already in
-	bool AddCurrentWeather();
+	enum class AddResult { Added, NoWeather, AlreadyListed, NotSaved };
+	// Appends the current weather to the list and the file. NotSaved: the file could not be written, nothing was added
+	AddResult AddCurrentWeather();
+	enum class RemoveResult { Removed, NoWeather, NotListed, NotSaved };
+	// Takes the current weather off the list and out of the file
+	RemoveResult RemoveCurrentWeather();
+	// Writes the list that ships with the mod back to the file and reloads it. False: the file could not be written
+	bool ResetWeathers();
 	// Settings were changed in the menu: re-evaluate at once
 	void SettingsChanged();
 	Status GetStatus();

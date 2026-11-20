@@ -10,8 +10,13 @@ Skyrim SE, AE (1.5.97 to 1.7.x) and VR. The installer offers two DLLs: the curre
 **Lanterns page**
 - Fixed hours, or follow the sun (sunset and sunrise of the current climate, with offsets).
 - "Check every": how often the clock and the weather are looked at (100 to 5000 ms, default 500).
-- Gloomy weather keeps the lanterns lit by day, from a text list (`LoS2Control_Weathers.txt`). "Add the current weather" adds modded weathers.
+- Gloomy weather keeps the lanterns lit by day, from a text list (`LoS2Control_Weathers.txt`). Weathers on the list are treated as "lit all day".
+  - **Add the current weather...** asks first and says what it does (for weather mods that add their own fog, rain, snow or storms).
+  - **Remove the current weather** takes the weather you are standing in off the list again.
+  - **Reset the list to the original...** writes back the list that ships with the mod.
 - Lanterns mode: follow the schedule, always on or always off (the weather option only applies while following the schedule).
+- **Brightness and Distance** (0.25x to 3x): scale the intensity and the reach of the lanterns this mod controls, the ones whose Light Placer entries read `LoS2C_LightsOn`. In the SE/AE build this is applied every frame right after Light Placer's own update, so it also holds for flickering lights. The older (VR, 1.6.1130 and below) build applies it once a second only, so flickering lanterns may not keep it there.
+- **Settings save themselves** a moment after you change them. **Reset everything to default...** puts every setting and the weather list back to what came with the mod.
 - Keeps the Lanterns of Skyrim II MCM pinned at "Always off", because the ISL bulbs come from Light Placer.
 - The schedule is a global, `LoS2C_LightsOn`, that Light Placer conditions read. Anything can use it.
 
@@ -36,6 +41,11 @@ The download is a FOMOD installer with two steps:
 2. `LoS2-DLL update` (keep it ticked for the lantern schedule): `LoS2-DLL.esp` with the `LoS2C_LightsOn` global and the two Light Placer json files whose conditions read it. Let it overwrite LoS II Dynamic Lantern Lighting (it replaces the 628 hard-coded weather and 19:00-07:00 conditions).
 
 Settings are in `Data/SKSE/Plugins/LoS2Control.ini`, created on first start.
+
+## Language
+The menu follows the language the game runs in (`sLanguage` in Skyrim.ini), or the `sLanguage` under `[General]` in `LoS2Control.ini` if you set one there. The texts are plain files in `Data/SKSE/Plugins/LoS2Control/lang/<language>.json`, one object of `"English text": "translation"`. A missing file or a missing line leaves the English text. To translate into another language, copy `_template.json` to `<language>.json` (for example `german.json`) and translate the values; keep the `{}` and `%s` placeholders.
+
+A Japanese translation (`japanese.json`) is included. It is a first draft that a native speaker has not reviewed. For Japanese, Chinese, Korean or Russian text to show in the menu, turn the language on in the SKSE Menu Framework's own `SKSEMenuFramework.ini`, under `[Fonts]` (`EnableJapanese = true`, `EnableChinese`, `EnableKorean`, `EnableCyrillic`). They are off by default, and the menu then shows `?` marks.
 
 ## Building
 SE/AE: alandtse's CommonLibSSE-NG, `ng.cmake` describes the plugin. VR and older: CharmedBaryon's CommonLibSSE-NG through vcpkg, `plugin/build.cmd`. Both build the same `src/`.

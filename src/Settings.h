@@ -19,10 +19,18 @@ struct Settings
 	int   checkIntervalMs{ 500 };          // how often the schedule looks at the clock and the weather (100 - 5000)
 	bool  debugLog{ false };
 
+	char  language[32]{ "" };               // [General] sLanguage: empty = follow the game's language, or a name such as "japanese" (file lang/<name>.json)
+	float lightBrightness{ 1.0f };         // multiplies the intensity (fade) of the lanterns this mod controls: 0.25 - 3
+	float lightDistance{ 1.0f };           // multiplies their radius: 0.25 - 3
+
 	static Settings& Get();
 	static constexpr const char* kPath = "Data/SKSE/Plugins/LoS2Control.ini";
 	static constexpr const char* kWeatherPath = "Data/SKSE/Plugins/LoS2Control_Weathers.txt";
 	void Load();
 	void Save() const;
 	void Clamp();
+	// A setting was changed in the menu: it is written to the ini a moment after the last change (the settings were lost when the game closed before "Save now" was pressed)
+	static void MarkChanged();
+	// Called every tick on the main thread: writes the ini once the last change is old enough
+	static void SaveIfDue();
 };

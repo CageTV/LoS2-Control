@@ -73,6 +73,14 @@ namespace Editor
 
 	// Main thread, called every update tick: works on a pending pick request
 	void Tick();
+	// Main thread, called every update tick: applies the global brightness / distance (Settings) to the lanterns this mod controls, about once a second
+	void ScaleTick();
+	// The brightness / distance settings changed: apply at once
+	void ScaleChanged();
+	// Once per frame and cell, called by the hook right after Light Placer's own update
+	void ScaleFrame(RE::TESObjectCELL* a_cell);
+	// Hooks the call Light Placer hooks, so the scaling runs after its update. Call once, at data loaded. False: not hooked (the once a second sweep still works)
+	bool InstallFrameHook();
 	// UI thread
 	void RequestPick();
 	TargetSnap GetTarget();

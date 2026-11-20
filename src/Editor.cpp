@@ -1,5 +1,8 @@
 #include "Editor.h"
 
+#include "Lang.h"
+#include "Settings.h"
+
 #include <nlohmann/json.hpp>
 
 namespace Editor
@@ -15,8 +18,29 @@ namespace Editor
 		RE::ObjectRefHandle                          targetHandle;
 		std::unordered_map<std::string, LightSnap>   originals;  // by node name, values read at pick time
 		std::atomic<bool>                            pickRequested{ false };
-		std::string                                  status = "Look at a lantern and press the button.";
+		constexpr const char*                        kInitialStatus = "Look at a lantern and press the button.";
+		std::string                                  status = kInitialStatus;
 		std::uint32_t                                serial = 0;
+
+		// Global brightness / distance. Light Placer rewrites the radius and fade of its animated lights (flicker) every frame, so the scaling is applied once a second
+		// to find the lights and again after Light Placer's own update, once per frame and cell (ScaleFrame). An entry keeps what was written, to tell its own values
+		// from a fresh write and never scale twice. Main thread only.
+		struct ScaleEntry
+		{
+			RE::NiPointer<RE::NiPointLight> light;  // holds the light, so the pointer used as the key cannot be reused
+			RE::FormID                      cell{ 0 };
+			float                           origRadius{ 0.0f };
+			float                           origFade{ 0.0f };
+			float                           wroteRadius{ 0.0f };
+			float                           wroteFade{ 0.0f };
+			bool                            tracked{ false };
+		};
+		std::unordered_map<RE::NiPointLight*, ScaleEntry>        scaleLights;
+		std::unordered_map<RE::FormID, std::vector<ScaleEntry*>> scaleByCell;
+		std::atomic<bool>                                        scaleDirty{ true };
+		std::uint64_t                                            scaleFrameCalls{ 0 };  // diagnostics, main thread
+		std::uint64_t                                            scaleFrameHits{ 0 };
+		std::uint64_t                                            scaleWrites{ 0 };
 
 		std::string Lower(std::string a_s)
 		{
@@ -245,7 +269,18 @@ namespace Editor
 			std::vector<RE::NiPointLight*> lights;
 			CollectLights(a_ref->Get3D(), lights);
 			for (const auto light : lights) {
-				t.lights.push_back(Read(light, a_ref->Get3D()));
+				auto snap = Read(light, a_ref->Get3D());
+				// show the values the light files give, not the global brightness / distance on top of them
+				if (const auto it = scaleLights.find(light); it != scaleLights.end() && it->second.tracked) {
+					const auto& d = light->GetLightRuntimeData();
+					if (d.radius.x == it->second.wroteRadius) {
+						snap.radius = it->second.origRadius;
+					}
+					if (d.fade == it->second.wroteFade) {
+						snap.fade = it->second.origFade;
+					}
+				}
+				t.lights.push_back(std::move(snap));
 			}
 			CollectNodeNames(a_ref->Get3D(), t.nodes);
 			return t;
@@ -301,8 +336,11 @@ namespace Editor
 			std::vector<std::string> nodes;
 			std::vector<std::string> lights;
 			bool                     conditions{ false };
+			bool                     schedule{ false };  // a light of the entry reads our LoS2C_LightsOn global: one of the lanterns this mod controls
 		};
 		std::mutex              indexLock;
+		std::set<std::string>   scaleModels;  // models and ids of the entries with schedule, for the global brightness / distance
+		std::set<std::string>   scaleIds;
 		std::vector<IndexEntry> index;
 		int                     indexFiles{ 0 };
 		bool                    indexed{ false };
@@ -382,6 +420,9 @@ namespace Editor
 									}
 									if (d.contains("conditions")) {
 										x.conditions = true;
+										if (Lower(d["conditions"].dump()).find(Lower(Settings::Get().lightsGlobal)) != std::string::npos) {
+											x.schedule = true;
+										}
 									}
 								}
 							}
@@ -390,7 +431,17 @@ namespace Editor
 					}
 				}
 			}
+			std::set<std::string> models, ids;
+			for (const auto& e : list) {
+				if (e.schedule) {
+					models.insert(e.models.begin(), e.models.end());
+					ids.insert(e.formIDs.begin(), e.formIDs.end());
+				}
+			}
 			std::scoped_lock l(indexLock);
+			scaleModels = std::move(models);
+			scaleIds = std::move(ids);
+			scaleDirty = true;
 			index = std::move(list);
 			hiddenFiles = std::move(hidden);
 			indexFiles = files;
@@ -464,12 +515,12 @@ namespace Editor
 			}
 			std::ifstream in(a_path);
 			if (!in) {
-				a_err = "Cannot open " + a_path.generic_string();
+				a_err = Lang::F("Cannot open {}", a_path.generic_string());
 				return false;
 			}
 			a_out = json::parse(in, nullptr, false, true);
 			if (a_out.is_discarded() || !a_out.is_array()) {
-				a_err = a_path.generic_string() + " is not a valid Light Placer json (a list of entries)";
+				a_err = Lang::F("{} is not a valid Light Placer json (a list of entries)", a_path.generic_string());
 				return false;
 			}
 			return true;
@@ -481,13 +532,13 @@ namespace Editor
 			fs::create_directories(a_path.parent_path(), ec);
 			std::ofstream out(a_path, std::ios::trunc);
 			if (!out) {
-				a_err = "Cannot write " + a_path.generic_string();
+				a_err = Lang::F("Cannot write {}", a_path.generic_string());
 				return false;
 			}
 			out << a_json.dump(2, ' ', false, json::error_handler_t::replace) << '\n';
 			out.flush();
 			if (!out.good()) {
-				a_err = "Writing " + a_path.generic_string() + " failed";
+				a_err = Lang::F("Writing {} failed", a_path.generic_string());
 				return false;
 			}
 			return true;
@@ -560,7 +611,7 @@ namespace Editor
 	{
 		const auto t = GetTarget();
 		if (!t.valid || t.model.empty()) {
-			SetPatchStatus("Nothing to save: pick a light first.");
+			SetPatchStatus(Lang::T("Nothing to save: pick a light first."));
 			return;
 		}
 		json lights = json::array();
@@ -602,7 +653,7 @@ namespace Editor
 			lights.push_back(std::move(entry));
 		}
 		if (lights.empty()) {
-			SetPatchStatus(std::format("Nothing saved: none of the {} light node(s) could be described (no LIGH record or unknown attach point).", t.lights.size()));
+			SetPatchStatus(Lang::F("Nothing saved: none of the {} light node(s) could be described (no LIGH record or unknown attach point).", t.lights.size()));
 			return;
 		}
 
@@ -632,15 +683,16 @@ namespace Editor
 			return;
 		}
 		RescanJson();
-		SetPatchStatus(std::format("{} {} light(s) for {} in {}{}. Restart the game for Light Placer to read it. If another file also lights this model, turn that entry off below.",
-			replaced ? "Updated" : "Saved", lights.size(), model, kPatchFile, skipped ? std::format(" ({} skipped)", skipped) : std::string{}));
+		SetPatchStatus(Lang::F(replaced ? "Updated {} light(s) for {} in {}{}. Restart the game for Light Placer to read it. If another file also lights this model, disable that file below."
+		                               : "Saved {} light(s) for {} in {}{}. Restart the game for Light Placer to read it. If another file also lights this model, disable that file below.",
+			lights.size(), model, kPatchFile, skipped ? Lang::F(" ({} skipped)", skipped) : std::string{}));
 	}
 
 	void RemovePatch()
 	{
 		const auto t = GetTarget();
 		if (!t.valid) {
-			SetPatchStatus("Pick a light first.");
+			SetPatchStatus(Lang::T("Pick a light first."));
 			return;
 		}
 		json        arr;
@@ -661,7 +713,7 @@ namespace Editor
 			}
 		}
 		if (!removed) {
-			SetPatchStatus("LoS2Control_Patches.json has no entry for this model.");
+			SetPatchStatus(Lang::T("LoS2Control_Patches.json has no entry for this model."));
 			return;
 		}
 		if (!SaveJson(kPatchFile, arr, err)) {
@@ -669,7 +721,7 @@ namespace Editor
 			return;
 		}
 		RescanJson();
-		SetPatchStatus(std::format("Removed {} entry from {}. Restart the game for it to take effect.", removed, kPatchFile));
+		SetPatchStatus(Lang::F("Removed {} entry from {}. Restart the game for it to take effect.", removed, kPatchFile));
 	}
 
 	std::vector<std::string> ChangedFiles()
@@ -700,14 +752,14 @@ namespace Editor
 			const fs::path  backup{ it->value("backup", "") };
 			fs::copy_file(backup, fs::path(a_file), fs::copy_options::overwrite_existing, ec);
 			if (ec) {
-				SetPatchStatus("Could not put " + a_file + " back (" + ec.message() + ").");
+				SetPatchStatus(Lang::F("Could not put {} back ({}).", a_file, ec.message()));
 				return;
 			}
 			fs::remove(backup, ec);
 			manifest.erase(it);
 			SaveJson(kManifest, manifest, err);
 			RescanJson();
-			SetPatchStatus("Put back " + a_file + ". Restart the game for it to take effect.");
+			SetPatchStatus(Lang::F("Put back {}. Restart the game for it to take effect.", a_file));
 			return;
 		}
 	}
@@ -716,25 +768,25 @@ namespace Editor
 	{
 		namespace fs = std::filesystem;
 		if (a_file == kPatchFile || a_file.size() < 6 || a_file.substr(a_file.size() - 5) != ".json") {
-			SetPatchStatus("Only another mod's .json file under Data/LightPlacer can be disabled.");
+			SetPatchStatus(Lang::T("Only another mod's .json file under Data/LightPlacer can be disabled."));
 			return;
 		}
 		const fs::path  from{ a_file };
 		const fs::path  to{ a_file + ".hidden" };
 		std::error_code ec;
 		if (fs::exists(to, ec)) {
-			SetPatchStatus(to.generic_string() + " already exists: re-enable or delete it first.");
+			SetPatchStatus(Lang::F("{} already exists: re-enable or delete it first.", to.generic_string()));
 			return;
 		}
 		fs::rename(from, to, ec);
 		if (ec) {
-			SetPatchStatus("Could not disable " + a_file + " (" + ec.message() + ").");
+			SetPatchStatus(Lang::F("Could not disable {} ({}).", a_file, ec.message()));
 			return;
 		}
 		// the mod manager's virtual file system decides where the rename lands: check that the original is really gone
 		if (fs::exists(from, ec) || !fs::exists(to, ec)) {
 			fs::rename(to, from, ec);
-			SetPatchStatus("The mod manager did not let " + a_file + " be renamed, nothing was changed. Disable that file in your mod manager instead.");
+			SetPatchStatus(Lang::F("The mod manager did not let {} be renamed, nothing was changed. Disable that file in your mod manager instead.", a_file));
 			return;
 		}
 		{
@@ -745,7 +797,7 @@ namespace Editor
 			}
 		}
 		RescanJson();
-		SetPatchStatus("Disabled " + a_file + " by renaming it to " + a_file + ".hidden. This switches off EVERY light that file defines, not only the picked object. Takes effect at the next game load; use 'Re-enable' to undo.");
+		SetPatchStatus(Lang::F("Disabled {0} by renaming it to {0}.hidden. This switches off EVERY light that file defines, not only the picked object. Takes effect at the next game load; use 'Re-enable' to undo.", a_file));
 	}
 
 	void EnableFile(const std::string& a_hidden)
@@ -766,25 +818,25 @@ namespace Editor
 		if (fs::exists(to, ec)) {
 			if (!fs::exists(fs::path(a_hidden), ec)) {
 				forget();  // it is back already (put back by hand or by the mod manager)
-				SetPatchStatus(orig + " is already in place. Removed it from the list.");
+				SetPatchStatus(Lang::F("{} is already in place. Removed it from the list.", orig));
 			} else {
-				SetPatchStatus(orig + " already exists, so " + a_hidden + " cannot be switched back on.");
+				SetPatchStatus(Lang::F("{} already exists, so {} cannot be switched back on.", orig, a_hidden));
 			}
 			return;
 		}
 		if (!fs::exists(fs::path(a_hidden), ec)) {
 			forget();
-			SetPatchStatus(a_hidden + " no longer exists. Removed it from the list.");
+			SetPatchStatus(Lang::F("{} no longer exists. Removed it from the list.", a_hidden));
 			return;
 		}
 		fs::rename(fs::path(a_hidden), to, ec);
 		if (ec) {
-			SetPatchStatus("Could not re-enable " + a_hidden + " (" + ec.message() + ").");
+			SetPatchStatus(Lang::F("Could not re-enable {} ({}).", a_hidden, ec.message()));
 			return;
 		}
 		forget();
 		RescanJson();
-		SetPatchStatus("Re-enabled " + to.generic_string() + ". Takes effect at the next game load.");
+		SetPatchStatus(Lang::F("Re-enabled {}. Takes effect at the next game load.", to.generic_string()));
 	}
 
 	std::vector<std::string> HiddenFiles()
@@ -819,6 +871,187 @@ namespace Editor
 		return patchText;
 	}
 
+	namespace
+	{
+		// Radius and fade are each judged on their own: Light Placer rewrites only the fade of a flickering light every frame, and the radius stays our scaled value.
+		// Taking both as "not ours" because one changed would scale the radius again every time (it grew without end).
+		void ApplyScale(ScaleEntry& a_e, bool a_scaling)
+		{
+			const auto& s = Settings::Get();
+			auto&       d = a_e.light->GetLightRuntimeData();
+			const bool  radiusIsOurs = a_e.tracked && d.radius.x == a_e.wroteRadius;
+			const bool  fadeIsOurs = a_e.tracked && d.fade == a_e.wroteFade;
+			const float origR = radiusIsOurs ? a_e.origRadius : d.radius.x;
+			const float origF = fadeIsOurs ? a_e.origFade : d.fade;
+			if (origR <= 0.0f) {
+				a_e.tracked = false;
+				return;
+			}
+			const float newR = a_scaling ? origR * s.lightDistance : origR;
+			const float newF = a_scaling ? origF * s.lightBrightness : origF;
+			if (d.radius.x != newR) {
+				d.radius.x = newR;
+				d.radius.y = newR;
+				SetAttenuation(a_e.light.get(), newR);
+			}
+			d.fade = newF;
+			a_e.origRadius = origR;
+			a_e.origFade = origF;
+			a_e.wroteRadius = newR;
+			a_e.wroteFade = newF;
+			a_e.tracked = a_scaling;
+			++scaleWrites;
+		}
+
+		bool ScalingOn()
+		{
+			const auto& s = Settings::Get();
+			return std::abs(s.lightBrightness - 1.0f) > 0.001f || std::abs(s.lightDistance - 1.0f) > 0.001f;
+		}
+	}
+
+	void ScaleChanged()
+	{
+		scaleDirty = true;
+	}
+
+	// Main thread. Finds the lanterns this mod controls (entries whose conditions read LoS2C_LightsOn) and applies Settings::lightBrightness / lightDistance to them
+	void ScaleTick()
+	{
+		static auto last = std::chrono::steady_clock::time_point{};
+		const auto  now = std::chrono::steady_clock::now();
+		if (!scaleDirty.exchange(false) && now - last < std::chrono::milliseconds(1000)) {
+			return;
+		}
+		last = now;
+
+		const bool scaling = ScalingOn();
+		if (!scaling && scaleLights.empty()) {
+			return;
+		}
+		const auto player = RE::PlayerCharacter::GetSingleton();
+		if (!player || !player->Get3D()) {
+			return;
+		}
+		std::set<std::string> models, ids;
+		{
+			std::scoped_lock l(indexLock);
+			models = scaleModels;
+			ids = scaleIds;
+		}
+		if (models.empty() && ids.empty()) {
+			scaleByCell.clear();
+			scaleLights.clear();
+			return;
+		}
+		std::unordered_map<RE::NiPointLight*, ScaleEntry> found;
+		RE::TES::GetSingleton()->ForEachReferenceInRange(player, kApplyAllRange, [&](auto&& a_arg) {
+			RE::TESObjectREFR* ref = Ptr(a_arg);
+			if (!ref || ref->IsDisabled() || !ref->Get3D()) {
+				return RE::BSContainer::ForEachResult::kContinue;
+			}
+			const auto base = ref->GetBaseObject();
+			if (!base) {
+				return RE::BSContainer::ForEachResult::kContinue;
+			}
+			bool match = models.contains(NormModel(ModelOf(base)));
+			if (!match) {
+				if (const char* e = base->GetFormEditorID(); e && *e) {
+					match = ids.contains(Lower(e));
+				}
+			}
+			if (!match) {
+				return RE::BSContainer::ForEachResult::kContinue;
+			}
+			const auto cell = ref->GetParentCell();
+			std::vector<RE::NiPointLight*> lights;
+			CollectLights(ref->Get3D(), lights);
+			for (const auto light : lights) {
+				if (found.contains(light)) {
+					continue;
+				}
+				ScaleEntry e;
+				if (const auto old = scaleLights.find(light); old != scaleLights.end()) {
+					e = std::move(old->second);
+				} else {
+					e.light.reset(light);
+				}
+				e.cell = cell ? cell->GetFormID() : 0;
+				found.emplace(light, std::move(e));
+			}
+			return RE::BSContainer::ForEachResult::kContinue;
+		});
+		for (auto& [light, e] : scaleLights) {
+			// moved-from entries (found again above) have no light; a light only we hold (count 1) is gone from the scene
+			if (e.light && e.light->GetRefCount() > 1 && !found.contains(light)) {
+				found.emplace(light, std::move(e));
+			}
+		}
+		scaleLights = std::move(found);
+		scaleByCell.clear();
+		for (auto& [light, e] : scaleLights) {
+			ApplyScale(e, scaling);
+			if (scaling) {
+				scaleByCell[e.cell].push_back(&e);
+			}
+		}
+		logger::debug("Scale: {} lights in {} cells, {}x brightness {}x distance; hook calls {} (hit a cell with lights {}), writes {}", scaleLights.size(), scaleByCell.size(),
+			Settings::Get().lightBrightness, Settings::Get().lightDistance, scaleFrameCalls, scaleFrameHits, scaleWrites);
+		if (!scaling) {
+			scaleLights.clear();  // lights out of range keep their scaled values until their cell reloads
+		}
+	}
+
+	// Main thread, once per frame and loaded cell right after Light Placer has updated its animated lights
+	void ScaleFrame(RE::TESObjectCELL* a_cell)
+	{
+		if (!a_cell || scaleByCell.empty()) {
+			return;
+		}
+		++scaleFrameCalls;
+		if (const auto it = scaleByCell.find(a_cell->GetFormID()); it != scaleByCell.end()) {
+			++scaleFrameHits;
+			for (const auto e : it->second) {
+				ApplyScale(*e, true);
+			}
+		}
+	}
+
+#ifndef LOS2C_LEGACY
+	namespace
+	{
+		// TESObjectCELL::RunAnimations calls UpdateActivateParents, where Light Placer updates its flickering lights. Hooking the same call after Light Placer has installed
+		// its own (it does so when it loads, we do it at data loaded) puts this thunk outside its thunk: it runs after Light Placer's update.
+		struct RunAnimationsHook
+		{
+			static void thunk(RE::TESObjectCELL* a_cell)
+			{
+				func(a_cell);
+				ScaleFrame(a_cell);
+			}
+			static inline REL::Relocation<decltype(thunk)> func;
+		};
+	}
+#endif
+
+	bool InstallFrameHook()
+	{
+#ifdef LOS2C_LEGACY
+		logger::info("Brightness / distance: this build applies them once a second (no per frame hook)");
+		return false;
+#else
+		REL::Relocation<std::uintptr_t> target{ RELOCATION_ID(18458, 18889), 0x52 };  // TESObjectCELL::RunAnimations, the call Light Placer hooks
+		if (*reinterpret_cast<const std::uint8_t*>(target.address()) != 0xE8) {
+			logger::warn("Brightness / distance: the call at TESObjectCELL::RunAnimations+0x52 is not the expected one, applying them once a second only");
+			return false;
+		}
+		auto& trampoline = SKSE::GetTrampoline();
+		RunAnimationsHook::func = trampoline.write_call<5>(target.address(), RunAnimationsHook::thunk);
+		logger::info("Brightness / distance: applied every frame after Light Placer's update");
+		return true;
+#endif
+	}
+
 	void Tick()
 	{
 		if (!pickRequested.exchange(false)) {
@@ -842,7 +1075,7 @@ namespace Editor
 		if (!ref) {
 			target = TargetSnap{};
 			targetHandle = {};
-			status = "No light found in front of you (within 2500 units, about 20 degrees around the view). Look at a lantern and try again.";
+			status = Lang::T("No light found in front of you (within 2500 units, about 20 degrees around the view). Look at a lantern and try again.");
 			return;
 		}
 		targetHandle = ref->GetHandle();
@@ -851,7 +1084,7 @@ namespace Editor
 		for (const auto& s : target.lights) {
 			originals[s.node] = s;
 		}
-		status = std::format("Picked {} ({:08X}), {} light(s), {:.0f} units away.", target.baseEdid.empty() ? target.name : target.baseEdid, target.refId, target.lights.size(), dist);
+		status = Lang::F("Picked {} ({:08X}), {} light(s), {:.0f} units away.", target.baseEdid.empty() ? target.name : target.baseEdid, target.refId, target.lights.size(), dist);
 		logger::info("{}", status);
 	}
 
@@ -869,7 +1102,7 @@ namespace Editor
 	std::string StatusLine()
 	{
 		std::scoped_lock l(lock);
-		return status;
+		return status == kInitialStatus ? Lang::T(kInitialStatus) : status;
 	}
 
 	void QueueEdit(const LightSnap& a_edit, bool a_applyAll)

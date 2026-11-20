@@ -30,6 +30,7 @@ namespace
 SKSEPluginLoad(const SKSE::LoadInterface* a_skse)
 {
 	SKSE::Init(a_skse);
+	SKSE::AllocTrampoline(64);
 	InitializeLog();
 
 	Settings::Get().Load();
