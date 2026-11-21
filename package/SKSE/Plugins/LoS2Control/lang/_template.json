@@ -142,7 +142,7 @@
   "Does not follow the time of day colour.": "Does not follow the time of day colour.",
   "The list goes back to the one that came with LoS2 Control. Every weather you added is removed, and the lanterns follow the schedule again in those weathers.": "The list goes back to the one that came with LoS2 Control. Every weather you added is removed, and the lanterns follow the schedule again in those weathers.",
   "Reset the list": "Reset the list",
-  "Every setting goes back to its default: the schedule, brightness and distance, language and the rest. The weather list goes back to the original one. Light files you saved from the Light editor are not touched.": "Every setting goes back to its default: the schedule, brightness and distance, language and the rest. The weather list goes back to the original one. Light files you saved from the Light editor are not touched.",
+  "Every setting goes back to its default: the schedule, brightness and distance, language and the rest. The weather list goes back to the original one. Light files saved earlier are not touched.": "Every setting goes back to its default: the schedule, brightness and distance, language and the rest. The weather list goes back to the original one. Light files you saved from the Light editor are not touched.",
   "Reset everything": "Reset everything",
   "Nothing to save: pick a light first.": "Nothing to save: pick a light first.",
   "Pick a light first.": "Pick a light first.",

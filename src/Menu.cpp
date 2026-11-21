@@ -67,190 +67,6 @@ namespace Menu
 			return yes;
 		}
 
-		std::uint32_t                  pickedSerial = 0;
-		std::vector<Editor::LightSnap> edits;
-		bool                           applyAll = false;
-		bool                           advancedFlags = false;
-
-		bool FlagBox(const char* a_label, Editor::LightSnap& a_s, std::uint32_t a_bit, const char* a_tip)
-		{
-			bool v = (a_s.flags & a_bit) != 0;
-			const bool changed = Checkbox(Lang::T(a_label), &v);
-			Tip(a_tip);
-			if (changed) {
-				a_s.flags = v ? (a_s.flags | a_bit) : (a_s.flags & ~a_bit);
-			}
-			return changed;
-		}
-
-		void __stdcall RenderEditor()
-		{
-			Logo();
-			SeparatorText(Lang::T("Pick a light"));
-			TextWrapped("%s", Editor::StatusLine().c_str());
-			if (Button(Lang::T("Pick the light I am looking at"))) {
-				Editor::RequestPick();
-			}
-			Tip("Searches within 2500 units for the light closest to where the camera points. Works on any object whose model carries a light: Light Placer lights, ISL Helper converted lights and placed vanilla lights.");
-			SameLine();
-			if (Button(Lang::T("Scan Light Placer files"))) {
-				Editor::RescanJson();
-			}
-			Tip("Reads Data/LightPlacer/**/*.json so the list below can show which files define the picked object. Press it again after changing files.");
-			Checkbox(Lang::T("Show advanced flags"), &advancedFlags);
-		Tip("Off hides Linear, Portal strict, Ignore scale and No external emittance. Flags already set on a light are kept and saved either way.");
-		Checkbox(Lang::T("Edits also change all loaded copies of this object"), &applyAll);
-			Tip("Within 6000 units of you. Useful to see a change on every lantern of a street at once.");
-
-			const auto t = Editor::GetTarget();
-			if (!t.valid) {
-				return;
-			}
-			if (t.serial != pickedSerial) {
-				pickedSerial = t.serial;
-				edits = t.lights;
-			}
-
-			SeparatorText(Lang::T("Object"));
-			Text("%s", t.baseEdid.empty() ? Lang::T("(no editor id)") : t.baseEdid.c_str());
-			if (!t.name.empty()) {
-				SameLine();
-				TextDisabled("\"%s\"", t.name.c_str());
-			}
-			TextDisabled(Lang::T("Reference %08X, base %08X"), t.refId, t.baseId);
-			TextWrapped(Lang::T("Model: %s"), t.model.empty() ? "-" : t.model.c_str());
-
-			SeparatorText(Lang::T("Lights on it"));
-			if (t.lights.empty()) {
-				TextDisabled(Lang::T("This object has no light nodes in its loaded model."));
-			}
-			for (std::size_t i = 0; i < t.lights.size() && i < edits.size(); ++i) {
-				auto& e = edits[i];
-				PushID(std::to_string(i).c_str());
-				const std::string head = std::format("{}  ({})", e.node.empty() ? Lang::T("(unnamed node)") : e.node, e.lighEdid.empty() ? Lang::T("no LIGH") : e.lighEdid);
-				if (CollapsingHeader(head.c_str(), ImGuiTreeNodeFlags_DefaultOpen)) {
-					bool c = false;
-					c |= SliderFloat(Lang::T("Radius"), &e.radius, 0.0f, 3000.0f, "%.0f");
-					Tip("Reach of the light in game units.");
-					c |= SliderFloat(Lang::T("Size"), &e.size, 0.01f, 50.0f, "%.2f", ImGuiSliderFlags_Logarithmic);
-					Tip("Inverse square size: how large the emitting source is. Small = tight bright hot spot, large = softer.");
-					c |= SliderFloat(Lang::T("Cutoff"), &e.cutoff, 0.01f, 1.0f, "%.3f", ImGuiSliderFlags_Logarithmic);
-					Tip("The light level at which the reach ends. Lower = flatter curve that carries further.");
-					c |= SliderFloat(Lang::T("Fade (intensity)"), &e.fade, 0.0f, 20.0f, "%.2f");
-					c |= ColorEdit3(Lang::T("Colour"), e.color);
-					c |= FlagBox("Inverse square", e, Editor::Flag::InverseSquare, "Community Shaders inverse square falloff.");
-					if (advancedFlags) {
-						SameLine();
-						c |= FlagBox("Linear", e, Editor::Flag::Linear, "Linear falloff (Light Limit Fix).");
-					}
-					c |= FlagBox("Shadow", e, Editor::Flag::Shadow, "Casts shadows. Community Shaders limits these to 4 per cell.");
-					if (advancedFlags) {
-						SameLine();
-						c |= FlagBox("Portal strict", e, Editor::Flag::PortalStrict, "Does not light through portals (interior rooms).");
-						c |= FlagBox("Ignore scale", e, Editor::Flag::IgnoreScale, "Ignores the object's scale.");
-						SameLine();
-						c |= FlagBox("No external emittance", e, Editor::Flag::NoExternalEmittance, "Does not follow the time of day colour.");
-					}
-					if (e.cull != 0) {
-						TextDisabled(Lang::T("Hidden by Light Placer (cull bits 0x%02X): conditions, the game or a script. Edits are kept for when it shows again."), e.cull);
-					}
-					TextDisabled(Lang::T("LIGH record %08X: %s"), e.ligh, e.lighIsl ? Lang::T("carries the inverse square flag (converted by ISL Helper or the author)") : Lang::T("vanilla falloff"));
-					if (c) {
-						Editor::QueueEdit(e, applyAll);
-					}
-					if (Button(Lang::T("Revert to the values at pick time"))) {
-						edits[i] = t.lights[i];
-						Editor::QueueRevert(e.node, applyAll);
-					}
-				}
-				PopID();
-			}
-
-			SeparatorText(Lang::T("Write it as Light Placer json"));
-			static int schedule = 0;
-			Combo(Lang::T("When is it lit"), &schedule, Lang::Items("Always on|On the lantern schedule, outdoors only|On the lantern schedule, indoors too").c_str());
-			Tip("Always on: no condition, a permanent light. The schedule options add the condition 'LoS2C_LightsOn = 1', so the settings on the first page (hours, sun, weather) drive the light. Outdoors only also adds 'not interior'.");
-			if (Button(Lang::T("Save to LoS2Control_Patches.json"))) {
-				Editor::SaveOptions o;
-				o.schedule = schedule;
-				Editor::SavePatch(o);
-			}
-			Tip("Writes all the lights shown above, with the values in the sliders, as one entry for this object's model in Data/LightPlacer/LoS2Control/LoS2Control_Patches.json. Light Placer reads it at the next game start. ISL Helper leaves lights alone that a Light Placer file names.");
-			SameLine();
-			if (Button(Lang::T("Remove my entry for this model"))) {
-				Editor::RemovePatch();
-			}
-
-			if (const auto ps = Editor::PatchStatus(); !ps.empty()) {
-				TextWrapped("%s", ps.c_str());
-			}
-
-			SeparatorText(Lang::T("Light Placer files that define it"));
-			const auto m = Editor::FindMatches();
-			if (m.entriesScanned == 0) {
-				TextDisabled(Lang::T("Press 'Scan Light Placer files' first."));
-			} else {
-				TextDisabled(Lang::T("%d entries in %d files scanned"), m.entriesScanned, m.filesScanned);
-				if (m.list.empty()) {
-					TextWrapped(Lang::T("No Light Placer entry names this model or object. Its lights come from somewhere else (ISL Helper, a placed light or the model itself)."));
-				}
-				for (const auto& x : m.list) {
-					std::string nodes;
-					for (const auto& n : x.nodes) {
-						nodes += (nodes.empty() ? "" : ", ") + n;
-					}
-					std::string lights;
-					for (const auto& n : x.lights) {
-						lights += (lights.empty() ? "" : ", ") + n;
-					}
-					BulletText(Lang::T("%s  #%d  (by %s)%s"), x.file.c_str(), x.entry, x.by.c_str(), x.conditions ? "  [conditions]" : "");
-					if (x.file != Editor::kPatchFile) {
-						PushID((x.file + "#" + std::to_string(x.entry)).c_str());
-						SameLine();
-						if (SmallButton(Lang::T("Disable this file"))) {
-							Editor::DisableFile(x.file);
-						}
-						Tip("Renames the whole file to .json.hidden so Light Placer stops reading it (takes effect at the next game load). This switches off every light in that file, not only this object. Nothing else is touched; you can re-enable it below.");
-						PopID();
-					}
-					TextDisabled(Lang::T("    nodes: %s | lights: %s"), nodes.empty() ? "-" : nodes.c_str(), lights.empty() ? "-" : lights.c_str());
-				}
-				for (const auto& c : m.conflicts) {
-					TextColored(ImVec4(1.0f, 0.6f, 0.2f, 1.0f), "%s", c.c_str());
-				}
-				if (!m.conflicts.empty()) {
-					TextDisabled(Lang::T("Each entry adds its own bulb. Disable the other file (button above) or remove our entry."));
-				}
-			}
-
-			const auto hidden = Editor::HiddenFiles();
-			if (!hidden.empty()) {
-				SeparatorText(Lang::T("Files I disabled"));
-				for (const auto& f : hidden) {
-					PushID(f.c_str());
-					TextWrapped("%s", f.c_str());
-					SameLine();
-					if (SmallButton(Lang::T("Re-enable"))) {
-						Editor::EnableFile(f);
-					}
-					PopID();
-				}
-			}
-			const auto changed = Editor::ChangedFiles();
-			if (!changed.empty()) {
-				SeparatorText(Lang::T("Files I changed"));
-				for (const auto& f : changed) {
-					PushID(f.c_str());
-					TextWrapped("%s", f.c_str());
-					SameLine();
-					if (SmallButton(Lang::T("Put back"))) {
-						Editor::RestoreFile(f);
-					}
-					PopID();
-				}
-			}
-		}
-
 		void __stdcall RenderSettings()
 		{
 			auto& s = Settings::Get();
@@ -405,7 +221,7 @@ namespace Menu
 				OpenPopup(Lang::T("Reset all settings?"));
 			}
 			Tip("Puts every setting and the weather list back to the defaults that came with LoS2 Control.");
-			if (ConfirmPopup("Reset all settings?", "Every setting goes back to its default: the schedule, brightness and distance, language and the rest. The weather list goes back to the original one. Light files you saved from the Light editor are not touched.", "Reset everything")) {
+			if (ConfirmPopup("Reset all settings?", "Every setting goes back to its default: the schedule, brightness and distance, language and the rest. The weather list goes back to the original one. Light files saved earlier are not touched.", "Reset everything")) {
 				s = Settings{};
 				s.Clamp();
 				s.Save();
@@ -440,7 +256,6 @@ namespace Menu
 		}
 		SKSEMenuFramework::SetSection("LoS2 Control");
 		SKSEMenuFramework::AddSectionItem(Lang::T("Lanterns"), RenderSettings);
-		SKSEMenuFramework::AddSectionItem(Lang::T("Light editor"), RenderEditor);
 		logger::info("Registered the settings page with the SKSE Menu Framework");
 	}
 }

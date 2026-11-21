@@ -142,7 +142,7 @@
   "Does not follow the time of day colour.": "時間帯の色に追従しません。",
   "The list goes back to the one that came with LoS2 Control. Every weather you added is removed, and the lanterns follow the schedule again in those weathers.": "リストがLoS2 Control付属のものに戻ります。追加した天候はすべて削除され、それらの天候でもランタンがスケジュールに従うようになります。",
   "Reset the list": "リストをリセット",
-  "Every setting goes back to its default: the schedule, brightness and distance, language and the rest. The weather list goes back to the original one. Light files you saved from the Light editor are not touched.": "すべての設定が初期値に戻ります (スケジュール、明るさと距離、言語など)。天候リストも元のものに戻ります。ライトエディターで保存したライトファイルには影響しません。",
+  "Every setting goes back to its default: the schedule, brightness and distance, language and the rest. The weather list goes back to the original one. Light files saved earlier are not touched.": "すべての設定が初期値に戻ります (スケジュール、明るさと距離、言語など)。天候リストも元のものに戻ります。以前保存したライトファイルには影響しません。",
   "Reset everything": "すべてリセット",
   "Nothing to save: pick a light first.": "保存するものがありません: 先にライトを選択してください。",
   "Pick a light first.": "先にライトを選択してください。",
