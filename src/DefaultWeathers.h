@@ -58,6 +58,7 @@ RainRE
 RainTU
 RainVT
 RiftenOvercastFog
+Seasons_FogMA
 SkyrimFog
 SkyrimFogCO
 SkyrimFogCOHeavy
