@@ -997,6 +997,20 @@ namespace Editor
 		}
 		logger::debug("Scale: {} lights in {} cells, {}x brightness {}x distance; hook calls {} (hit a cell with lights {}), writes {}", scaleLights.size(), scaleByCell.size(),
 			Settings::Get().lightBrightness, Settings::Get().lightDistance, scaleFrameCalls, scaleFrameHits, scaleWrites);
+		{
+			// one line in the normal log whenever the number of lanterns being scaled changes, so a log shows that the settings were loaded and applied
+			static std::size_t loggedCount = static_cast<std::size_t>(-1);
+			const std::size_t  count = scaling ? scaleLights.size() : 0;
+			if (count != loggedCount) {
+				loggedCount = count;
+				if (scaling) {
+					logger::info("Scaling {} lanterns in {} cells: brightness {}x, distance {}x ({})", count, scaleByCell.size(), Settings::Get().lightBrightness,
+						Settings::Get().lightDistance, scaleFrameCalls > 0 ? "per frame hook running" : "per frame hook not called yet");
+				} else {
+					logger::info("Brightness / distance back to 1x: no scaling");
+				}
+			}
+		}
 		if (!scaling) {
 			scaleLights.clear();  // lights out of range keep their scaled values until their cell reloads
 		}
@@ -1017,7 +1031,6 @@ namespace Editor
 		}
 	}
 
-#ifndef LOS2C_LEGACY
 	namespace
 	{
 		// TESObjectCELL::RunAnimations calls UpdateActivateParents, where Light Placer updates its flickering lights. Hooking the same call after Light Placer has installed
@@ -1032,14 +1045,17 @@ namespace Editor
 			static inline REL::Relocation<decltype(thunk)> func;
 		};
 	}
-#endif
 
 	bool InstallFrameHook()
 	{
 #ifdef LOS2C_LEGACY
-		logger::info("Brightness / distance: this build applies them once a second (no per frame hook)");
-		return false;
-#else
+		// Light Placer has no VR build and uses no VR address for this call, so on VR the scaling stays a once-a-second sweep. Every other runtime this build
+		// covers (SE 1.5.97, AE up to 1.6.1130) gets the same per frame hook as the SE/AE build: Light Placer itself hooks RELOCATION_ID(18458, 18889) + 0x52 on all of them.
+		if (REL::Module::IsVR()) {
+			logger::info("Brightness / distance: Skyrim VR, applied once a second (no per frame hook)");
+			return false;
+		}
+#endif
 		REL::Relocation<std::uintptr_t> target{ RELOCATION_ID(18458, 18889), 0x52 };  // TESObjectCELL::RunAnimations, the call Light Placer hooks
 		if (*reinterpret_cast<const std::uint8_t*>(target.address()) != 0xE8) {
 			logger::warn("Brightness / distance: the call at TESObjectCELL::RunAnimations+0x52 is not the expected one, applying them once a second only");
@@ -1049,7 +1065,6 @@ namespace Editor
 		RunAnimationsHook::func = trampoline.write_call<5>(target.address(), RunAnimationsHook::thunk);
 		logger::info("Brightness / distance: applied every frame after Light Placer's update");
 		return true;
-#endif
 	}
 
 	void Tick()

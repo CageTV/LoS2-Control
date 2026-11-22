@@ -193,6 +193,14 @@ namespace Menu
 			c |= Checkbox(Lang::T("Keep its own MCM at 'Always off'"), &s.pinLoS2);
 			Tip("The ISL bulbs come from Light Placer, so the original lantern lights must stay off.");
 
+			SeparatorText(Lang::T("Log"));
+			const bool wasDebug = s.debugLog;
+			c |= Checkbox(Lang::T("Write a detailed log"), &s.debugLog);
+			if (s.debugLog != wasDebug) {
+				spdlog::set_level(s.debugLog ? spdlog::level::debug : spdlog::level::info);
+			}
+			Tip("Also records what the brightness and distance sweep does in LoS2Control.log (the SKSE log folder). Turn it on before reproducing a problem, then send the log. Off by default.");
+
 			SeparatorText(Lang::T("Now"));
 			const auto st = Schedule::GetStatus();
 			Text(Lang::T("Hour %s, lit from %s to %s (%s)"), Clock(st.hour).c_str(), Clock(st.onAt).c_str(), Clock(st.offAt).c_str(), st.night ? Lang::T("night") : Lang::T("day"));

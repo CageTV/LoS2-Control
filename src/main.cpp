@@ -42,6 +42,8 @@ SKSEPluginLoad(const SKSE::LoadInterface* a_skse)
 
 	SKSE::GetMessagingInterface()->RegisterListener(OnMessage);
 
-	logger::info("LoS2 Control loaded");
+	const auto& s = Settings::Get();
+	logger::info("LoS2 Control loaded (mode {}, brightness {}x, distance {}x, detailed log {})", s.mode == Settings::kFixedHours ? "fixed hours" : "follow the sun",
+		s.lightBrightness, s.lightDistance, s.debugLog ? "on" : "off");
 	return true;
 }

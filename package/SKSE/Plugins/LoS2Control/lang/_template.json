@@ -114,5 +114,7 @@
   "Could not re-enable {} ({}).": "Could not re-enable {} ({}).",
   "Re-enabled {}. Takes effect at the next game load.": "Re-enabled {}. Takes effect at the next game load.",
   "Picked {} ({:08X}), {} light(s), {:.0f} units away.": "Picked {} ({:08X}), {} light(s), {:.0f} units away.",
-  "Look at a lantern and press the button.": "Look at a lantern and press the button."
+  "Look at a lantern and press the button.": "Look at a lantern and press the button.",
+  "Log": "Log",
+  "Write a detailed log": "Write a detailed log"
 }

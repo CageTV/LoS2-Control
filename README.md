@@ -39,7 +39,7 @@ Settings are in `Data/SKSE/Plugins/LoS2Control.ini`, created on first start.
 ## Language
 The menu follows the language the game runs in (`sLanguage` in Skyrim.ini), or the `sLanguage` under `[General]` in `LoS2Control.ini` if you set one there. The texts are plain files in `Data/SKSE/Plugins/LoS2Control/lang/<language>.json`, one object of `"English text": "translation"`. A missing file or a missing line leaves the English text. To translate into another language, copy `_template.json` to `<language>.json` (for example `german.json`) and translate the values; keep the `{}` and `%s` placeholders.
 
-A Japanese translation (`japanese.json`) is included. It is a first draft that a native speaker has not reviewed. For Japanese, Chinese, Korean or Russian text to show in the menu, turn the language on in the SKSE Menu Framework's own `SKSEMenuFramework.ini`, under `[Fonts]` (`EnableJapanese = true`, `EnableChinese`, `EnableKorean`, `EnableCyrillic`). They are off by default, and the menu then shows `?` marks.
+If you add a translation in Japanese, Chinese, Korean or Russian, turn the language on in the SKSE Menu Framework's own `SKSEMenuFramework.ini`, under `[Fonts]` (`EnableJapanese = true`, `EnableChinese`, `EnableKorean`, `EnableCyrillic`). They are off by default, and the menu then shows `?` marks.
 
 ## Building
 SE/AE: alandtse's CommonLibSSE-NG, `ng.cmake` describes the plugin. VR and older: CharmedBaryon's CommonLibSSE-NG through vcpkg, `plugin/build.cmd`. Both build the same `src/`.
