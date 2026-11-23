@@ -151,18 +151,70 @@ namespace Schedule
 
 	void ReloadWeathers()
 	{
-		std::set<std::string> list;
-		std::ifstream         in(Settings::kWeatherPath);
-		for (std::string line; std::getline(in, line);) {
-			line = Trim(line);
-			if (line.empty() || line[0] == ';' || line[0] == '#') {
-				continue;
+		const auto read = [](const char* a_path, std::set<std::string>& a_out) {
+			std::ifstream in(a_path);
+			for (std::string line; std::getline(in, line);) {
+				line = Trim(line);
+				if (line.empty() || line[0] == ';' || line[0] == '#') {
+					continue;
+				}
+				a_out.insert(Lower(line));
 			}
-			list.insert(Lower(line));
-		}
+		};
+		std::set<std::string> list, extra;
+		read(Settings::kWeatherPath, list);
+		read(Settings::kExtraWeatherPath, extra);
+		const auto mainCount = list.size();
+		list.insert(extra.begin(), extra.end());
 		std::scoped_lock l(weatherLock);
 		weathers = std::move(list);
-		logger::info("{} weathers keep the lanterns on by day ({})", weathers.size(), Settings::kWeatherPath);
+		logger::info("{} weathers keep the lanterns on by day ({}: {}, {}: {})", weathers.size(), Settings::kWeatherPath, mainCount, Settings::kExtraWeatherPath, extra.size());
+	}
+
+	namespace
+	{
+		// The extra list is created once, with a comment that says what it is for. It is the user's: nothing in this mod rewrites it except "Remove the current weather".
+		void EnsureExtraFile()
+		{
+			std::error_code ec;
+			if (std::filesystem::exists(Settings::kExtraWeatherPath, ec)) {
+				return;
+			}
+			std::ofstream out(Settings::kExtraWeatherPath, std::ios::binary);
+			out << "; Weathers that keep the lanterns lit by day, one weather EditorID per line.\n"
+				   "; This list is read together with LoS2Control_Weathers.txt and is never touched by \"Reset the list to the original\" or \"Reset everything\".\n"
+				   "; Put the weathers of a weather mod here so an update or a reset of the main list cannot take them away.\n";
+		}
+
+		// Takes every line that names a weather out of a file, the rest (comments, line endings) stays. False: the file could not be written
+		bool RemoveLines(const char* a_path, const std::string& a_key, bool& a_found)
+		{
+			std::string text;
+			{
+				std::ifstream in(a_path, std::ios::binary);
+				text.assign(std::istreambuf_iterator<char>(in), std::istreambuf_iterator<char>());
+			}
+			std::string kept;
+			std::size_t pos = 0;
+			while (pos < text.size()) {
+				const auto nl = text.find('\n', pos);
+				const auto end = nl == std::string::npos ? text.size() : nl + 1;
+				const auto raw = text.substr(pos, end - pos);
+				if (Lower(Trim(raw)) != a_key) {
+					kept += raw;
+				} else {
+					a_found = true;
+				}
+				pos = end;
+			}
+			if (kept == text) {
+				return true;
+			}
+			std::ofstream out(a_path, std::ios::binary | std::ios::trunc);
+			out << kept;
+			out.flush();
+			return out.good();
+		}
 	}
 
 	AddResult AddCurrentWeather()
@@ -225,31 +277,12 @@ namespace Schedule
 				return RemoveResult::NotListed;
 			}
 		}
-		std::string text;
-		{
-			std::ifstream in(Settings::kWeatherPath, std::ios::binary);
-			text.assign(std::istreambuf_iterator<char>(in), std::istreambuf_iterator<char>());
-		}
-		// every line that names this weather goes, the rest (comments, line endings) stays as it is
-		std::string kept;
-		std::size_t pos = 0;
-		while (pos < text.size()) {
-			const auto nl = text.find('\n', pos);
-			const auto end = nl == std::string::npos ? text.size() : nl + 1;
-			const auto raw = text.substr(pos, end - pos);
-			if (Lower(Trim(raw)) != key) {
-				kept += raw;
-			}
-			pos = end;
-		}
-		{
-			std::ofstream out(Settings::kWeatherPath, std::ios::binary | std::ios::trunc);
-			out << kept;
-			out.flush();
-			if (!out.good()) {
-				logger::error("Could not write {}: {} was not removed", Settings::kWeatherPath, name);
-				return RemoveResult::NotSaved;
-			}
+		// the weather may be on the main list, on the extra list, or on both: it goes off every list it is on
+		bool found = false;
+		if (!RemoveLines(Settings::kWeatherPath, key, found) || !RemoveLines(Settings::kExtraWeatherPath, key, found)) {
+			logger::error("Could not write the weather list: {} was not removed", name);
+			ReloadWeathers();
+			return RemoveResult::NotSaved;
 		}
 		{
 			std::scoped_lock l(weatherLock);
@@ -289,6 +322,7 @@ namespace Schedule
 
 	void Init()
 	{
+		EnsureExtraFile();
 		ReloadWeathers();
 		Editor::RescanJson();  // the light files tell which lanterns the global brightness / distance applies to
 		Editor::InstallFrameHook();

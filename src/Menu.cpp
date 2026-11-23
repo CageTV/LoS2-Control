@@ -127,7 +127,7 @@ namespace Menu
 				Schedule::ReloadWeathers();
 				addNote = Lang::T("List reloaded from the file.");
 			}
-			Tip("Reads LoS2Control_Weathers.txt again. A weather that was never saved to the file drops out.");
+			Tip("Reads LoS2Control_Weathers.txt and LoS2Control_Weathers_Extra.txt again. A weather that was never saved to a file drops out.");
 			if (Button(Lang::T("Remove the current weather"))) {
 				switch (Schedule::RemoveCurrentWeather()) {
 				case Schedule::RemoveResult::Removed:
@@ -149,8 +149,8 @@ namespace Menu
 			if (Button(Lang::T("Reset the list to the original..."))) {
 				OpenPopup(Lang::T("Reset the weather list?"));
 			}
-			Tip("Puts the list back to the one that came with LoS2 Control. Every weather you added is removed.");
-			if (ConfirmPopup("Reset the weather list?", "The list goes back to the one that came with LoS2 Control. Every weather you added is removed, and the lanterns follow the schedule again in those weathers.", "Reset the list")) {
+			Tip("Puts the list back to the one that came with LoS2 Control. Every weather you added to it is removed. Weathers in LoS2Control_Weathers_Extra.txt are kept.");
+			if (ConfirmPopup("Reset the weather list?", "The list goes back to the one that came with LoS2 Control. Every weather you added to it is removed, and the lanterns follow the schedule again in those weathers. Weathers in LoS2Control_Weathers_Extra.txt are kept.", "Reset the list")) {
 				addNote = Schedule::ResetWeathers() ? Lang::T("The weather list is back to the original.") : Lang::T("LoS2Control_Weathers.txt could not be written.");
 			}
 			if (!addNote.empty()) {
@@ -229,7 +229,7 @@ namespace Menu
 				OpenPopup(Lang::T("Reset all settings?"));
 			}
 			Tip("Puts every setting and the weather list back to the defaults that came with LoS2 Control.");
-			if (ConfirmPopup("Reset all settings?", "Every setting goes back to its default: the schedule, brightness and distance, language and the rest. The weather list goes back to the original one. Light files saved earlier are not touched.", "Reset everything")) {
+			if (ConfirmPopup("Reset all settings?", "Every setting goes back to its default: the schedule, brightness and distance, language and the rest. The weather list goes back to the original one (LoS2Control_Weathers_Extra.txt is kept). Light files saved earlier are not touched.", "Reset everything")) {
 				s = Settings{};
 				s.Clamp();
 				s.Save();

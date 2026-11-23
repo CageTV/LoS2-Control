@@ -26,6 +26,8 @@ struct Settings
 	static Settings& Get();
 	static constexpr const char* kPath = "Data/SKSE/Plugins/LoS2Control.ini";
 	static constexpr const char* kWeatherPath = "Data/SKSE/Plugins/LoS2Control_Weathers.txt";
+	// Weathers of the user (or of a weather mod author): read with the list above, never written over by "Reset the list"
+	static constexpr const char* kExtraWeatherPath = "Data/SKSE/Plugins/LoS2Control_Weathers_Extra.txt";
 	void Load();
 	void Save() const;
 	void Clamp();

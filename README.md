@@ -14,6 +14,7 @@ Skyrim SE, AE (1.5.97 to 1.7.x) and VR. The installer offers two DLLs: the curre
   - **Add the current weather...** asks first and says what it does (for weather mods that add their own fog, rain, snow or storms).
   - **Remove the current weather** takes the weather you are standing in off the list again.
   - **Reset the list to the original...** writes back the list that ships with the mod.
+  - **`LoS2Control_Weathers_Extra.txt`** is a second list, created on first start and read together with the main one. *Reset the list to the original...* and *Reset everything to default...* never touch it, so the weathers of a weather mod (one EditorID per line) can go there and survive a reset. *Remove the current weather* takes a weather off both lists.
 - Lanterns mode: follow the schedule, always on or always off (the weather option only applies while following the schedule).
 - **Brightness and Distance** (0.25x to 3x): scale the intensity and the reach of the lanterns this mod controls, the ones whose Light Placer entries read `LoS2C_LightsOn`. In the SE/AE build this is applied every frame right after Light Placer's own update, so it also holds for flickering lights. The older (VR, 1.6.1130 and below) build applies it once a second only, so flickering lanterns may not keep it there.
 - **Settings save themselves** a moment after you change them. **Reset everything to default...** puts every setting and the weather list back to what came with the mod.
