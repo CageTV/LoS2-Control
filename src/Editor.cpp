@@ -33,6 +33,8 @@ namespace Editor
 			float                           origFade{ 0.0f };
 			float                           wroteRadius{ 0.0f };
 			float                           wroteFade{ 0.0f };
+			float                           origCutoff{ 0.0f };  // inverse-square lights: the cutoff the distance is made from (Community Shaders recomputes the radius from it)
+			float                           wroteCutoff{ 0.0f };
 			bool                            tracked{ false };
 		};
 		std::unordered_map<RE::NiPointLight*, ScaleEntry>        scaleLights;
@@ -41,6 +43,7 @@ namespace Editor
 		std::uint64_t                                            scaleFrameCalls{ 0 };  // diagnostics, main thread
 		std::uint64_t                                            scaleFrameHits{ 0 };
 		std::uint64_t                                            scaleWrites{ 0 };
+		std::uint64_t                                            scaleInverseSquare{ 0 };  // writes to inverse-square lights (distance through the cutoff)
 
 		std::string Lower(std::string a_s)
 		{
@@ -278,6 +281,9 @@ namespace Editor
 					}
 					if (d.fade == it->second.wroteFade) {
 						snap.fade = it->second.origFade;
+					}
+					if (it->second.origCutoff > 0.0f && d.ambient.green == it->second.wroteCutoff) {
+						snap.cutoff = it->second.origCutoff;
 					}
 				}
 				t.lights.push_back(std::move(snap));
@@ -875,20 +881,47 @@ namespace Editor
 	{
 		// Radius and fade are each judged on their own: Light Placer rewrites only the fade of a flickering light every frame, and the radius stays our scaled value.
 		// Taking both as "not ours" because one changed would scale the radius again every time (it grew without end).
+		// Community Shaders' Inverse Square Lighting computes the radius of an inverse-square light again every frame, from its intensity (fade), its cutoff and its
+		// size, and overwrites the radius field (InverseSquareLighting::ProcessLight). Writing the radius of such a light does nothing, so Distance works on its
+		// cutoff there: the reach is about sqrt(intensity / cutoff), so a cutoff of 1 / distance^2 scales the reach by `distance` and leaves the brightness near the lamp
+		// alone. Brightness scales the intensity, which also reaches further (that is how inverse-square light behaves). Other lights keep the radius scaling.
 		void ApplyScale(ScaleEntry& a_e, bool a_scaling)
 		{
 			const auto& s = Settings::Get();
 			auto&       d = a_e.light->GetLightRuntimeData();
-			const bool  radiusIsOurs = a_e.tracked && d.radius.x == a_e.wroteRadius;
+			const bool  inverseSquare = (std::bit_cast<std::uint32_t>(d.ambient.red) & Flag::InverseSquare) != 0;
 			const bool  fadeIsOurs = a_e.tracked && d.fade == a_e.wroteFade;
-			const float origR = radiusIsOurs ? a_e.origRadius : d.radius.x;
 			const float origF = fadeIsOurs ? a_e.origFade : d.fade;
+			const float newF = a_scaling ? origF * s.lightBrightness : origF;
+			if (inverseSquare) {
+				const bool  cutoffIsOurs = a_e.tracked && d.ambient.green == a_e.wroteCutoff;
+				const float origC = cutoffIsOurs ? a_e.origCutoff : d.ambient.green;
+				float       newC = origC;
+				if (a_scaling && std::abs(s.lightDistance - 1.0f) > 0.001f) {
+					// a cutoff of exactly 1 means "the default one" to Community Shaders
+					const float base = origC == 1.0f ? ((std::bit_cast<std::uint32_t>(d.ambient.red) & Flag::Shadow) ? 0.022f : 0.05f) : origC;
+					newC = std::clamp(base / (s.lightDistance * s.lightDistance), 0.001f, 0.999f);
+				}
+				d.ambient.green = newC;
+				d.fade = newF;
+				a_e.origCutoff = origC;
+				a_e.wroteCutoff = newC;
+				a_e.origRadius = d.radius.x;  // not written for these lights
+				a_e.wroteRadius = d.radius.x;
+				a_e.origFade = origF;
+				a_e.wroteFade = newF;
+				a_e.tracked = a_scaling;
+				++scaleWrites;
+				++scaleInverseSquare;
+				return;
+			}
+			const bool  radiusIsOurs = a_e.tracked && d.radius.x == a_e.wroteRadius;
+			const float origR = radiusIsOurs ? a_e.origRadius : d.radius.x;
 			if (origR <= 0.0f) {
 				a_e.tracked = false;
 				return;
 			}
 			const float newR = a_scaling ? origR * s.lightDistance : origR;
-			const float newF = a_scaling ? origF * s.lightBrightness : origF;
 			if (d.radius.x != newR) {
 				d.radius.x = newR;
 				d.radius.y = newR;
@@ -995,8 +1028,8 @@ namespace Editor
 				scaleByCell[e.cell].push_back(&e);
 			}
 		}
-		logger::debug("Scale: {} lights in {} cells, {}x brightness {}x distance; hook calls {} (hit a cell with lights {}), writes {}", scaleLights.size(), scaleByCell.size(),
-			Settings::Get().lightBrightness, Settings::Get().lightDistance, scaleFrameCalls, scaleFrameHits, scaleWrites);
+		logger::debug("Scale: {} lights in {} cells, {}x brightness {}x distance; hook calls {} (hit a cell with lights {}), writes {} ({} to inverse-square lights, distance through the cutoff)", scaleLights.size(), scaleByCell.size(),
+			Settings::Get().lightBrightness, Settings::Get().lightDistance, scaleFrameCalls, scaleFrameHits, scaleWrites, scaleInverseSquare);
 		{
 			// one line in the normal log whenever the number of lanterns being scaled changes, so a log shows that the settings were loaded and applied
 			static std::size_t loggedCount = static_cast<std::size_t>(-1);

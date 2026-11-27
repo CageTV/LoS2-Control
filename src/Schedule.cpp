@@ -11,7 +11,8 @@ namespace Schedule
 		constexpr auto kTick = 100ms;  // wakes the editor; the schedule itself runs every Settings::checkIntervalMs
 
 		std::mutex            weatherLock;
-		std::set<std::string> weathers;  // lower case EditorIDs
+		std::set<std::string> weathers;  // lower case EditorIDs: the main list and the extra list together
+		std::set<std::string> extraWeathers;  // only the ones on LoS2Control_Weathers_Extra.txt (edited by hand, never rewritten by the menu)
 		std::mutex            statusLock;
 		Status                status;
 		std::atomic<bool>     running{ false };
@@ -168,12 +169,13 @@ namespace Schedule
 		list.insert(extra.begin(), extra.end());
 		std::scoped_lock l(weatherLock);
 		weathers = std::move(list);
+		extraWeathers = extra;
 		logger::info("{} weathers keep the lanterns on by day ({}: {}, {}: {})", weathers.size(), Settings::kWeatherPath, mainCount, Settings::kExtraWeatherPath, extra.size());
 	}
 
 	namespace
 	{
-		// The extra list is created once, with a comment that says what it is for. It is the user's: nothing in this mod rewrites it except "Remove the current weather".
+		// The extra list is created once, with a comment that says what it is for. It is the user's: nothing in this mod ever rewrites it.
 		void EnsureExtraFile()
 		{
 			std::error_code ec;
@@ -277,19 +279,28 @@ namespace Schedule
 				return RemoveResult::NotListed;
 			}
 		}
-		// the weather may be on the main list, on the extra list, or on both: it goes off every list it is on
+		// Only LoS2Control_Weathers.txt is the menu's: a weather on the extra list is taken off by hand, in that file
+		bool inExtra = false;
+		{
+			std::scoped_lock l(weatherLock);
+			inExtra = extraWeathers.contains(key);
+		}
 		bool found = false;
-		if (!RemoveLines(Settings::kWeatherPath, key, found) || !RemoveLines(Settings::kExtraWeatherPath, key, found)) {
-			logger::error("Could not write the weather list: {} was not removed", name);
+		if (!RemoveLines(Settings::kWeatherPath, key, found)) {
+			logger::error("Could not write {}: {} was not removed", Settings::kWeatherPath, name);
 			ReloadWeathers();
 			return RemoveResult::NotSaved;
 		}
-		{
+		if (!found) {
+			logger::info("Weather {} is only on {}: not removed", name, Settings::kExtraWeatherPath);
+			return RemoveResult::OnlyInExtra;
+		}
+		if (!inExtra) {
 			std::scoped_lock l(weatherLock);
 			weathers.erase(key);
 		}
-		logger::info("Removed weather {} from the list", name);
-		return RemoveResult::Removed;
+		logger::info("Removed weather {} from {}{}", name, Settings::kWeatherPath, inExtra ? " (it stays on the extra list)" : "");
+		return inExtra ? RemoveResult::RemovedStillInExtra : RemoveResult::Removed;
 	}
 
 	bool ResetWeathers()

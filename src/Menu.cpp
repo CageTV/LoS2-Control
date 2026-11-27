@@ -127,7 +127,7 @@ namespace Menu
 				Schedule::ReloadWeathers();
 				addNote = Lang::T("List reloaded from the file.");
 			}
-			Tip("Reads LoS2Control_Weathers.txt and LoS2Control_Weathers_Extra.txt again. A weather that was never saved to a file drops out.");
+			Tip("Reads LoS2Control_Weathers.txt and LoS2Control_Weathers_Extra.txt again, after you edited them by hand. A weather that was never saved to a file drops out.");
 			if (Button(Lang::T("Remove the current weather"))) {
 				switch (Schedule::RemoveCurrentWeather()) {
 				case Schedule::RemoveResult::Removed:
@@ -135,6 +135,12 @@ namespace Menu
 					break;
 				case Schedule::RemoveResult::NotListed:
 					addNote = Lang::F("{} is not on the list.", now.weather);
+					break;
+				case Schedule::RemoveResult::OnlyInExtra:
+					addNote = Lang::F("{} is only on LoS2Control_Weathers_Extra.txt, which this menu never changes: remove the line there by hand.", now.weather);
+					break;
+				case Schedule::RemoveResult::RemovedStillInExtra:
+					addNote = Lang::F("{} removed from LoS2Control_Weathers.txt, but it is also on LoS2Control_Weathers_Extra.txt, so the lanterns still stay lit in it. Remove the line there by hand.", now.weather);
 					break;
 				case Schedule::RemoveResult::NotSaved:
 					addNote = Lang::F("{} could not be removed: LoS2Control_Weathers.txt could not be written.", now.weather);
@@ -144,7 +150,7 @@ namespace Menu
 					break;
 				}
 			}
-			Tip("Takes the weather that is active now off the list, so the lanterns follow the schedule again in it. For a weather you added by mistake.");
+			Tip("Takes the weather that is active now out of LoS2Control_Weathers.txt, so the lanterns follow the schedule again in it. For a weather you added by mistake. LoS2Control_Weathers_Extra.txt is only ever edited by hand: a weather on it stays on the list.");
 			SameLine();
 			if (Button(Lang::T("Reset the list to the original..."))) {
 				OpenPopup(Lang::T("Reset the weather list?"));

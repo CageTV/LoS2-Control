@@ -22,8 +22,8 @@ namespace Schedule
 	enum class AddResult { Added, NoWeather, AlreadyListed, NotSaved };
 	// Appends the current weather to the list and the file. NotSaved: the file could not be written, nothing was added
 	AddResult AddCurrentWeather();
-	enum class RemoveResult { Removed, NoWeather, NotListed, NotSaved };
-	// Takes the current weather off the list and out of the file
+	enum class RemoveResult { Removed, NoWeather, NotListed, NotSaved, OnlyInExtra, RemovedStillInExtra };
+	// Takes the current weather out of LoS2Control_Weathers.txt. LoS2Control_Weathers_Extra.txt is never written: a weather that is on it stays on the list
 	RemoveResult RemoveCurrentWeather();
 	// Writes the list that ships with the mod back to the file and reloads it. False: the file could not be written
 	bool ResetWeathers();
